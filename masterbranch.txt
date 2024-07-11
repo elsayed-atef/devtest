@@ -1,5 +1,3 @@
-i am in master branch no forks yet
-
 # Define server list file path (replace with your actual path)
 $serverListPath = "C:\servers.txt"
 
@@ -25,337 +23,8 @@ function Check-Server {
     # Create a PowerShell session on the remote server
     $session = New-PSSession -ComputerName $serverName -Credential (Get-Credential)
 
-    # ... other code for checking folders and files (unchanged) ...
-
-    # Check if server needs additional file check
-    if ($serversToCheckAdditionalFile -contains $serverName) {
-      # Check for additional file in d:\data\as.xc
-      $additionalFilePath = "D:\data\as.xc"
-      $additionalFileExists = Invoke-Command -Session $session -ScriptBlock { Test-Path $additionalFilePath }
-
-      if ($additionalFileExists) {
-        # Backup additional file with timestamp
-        Write-Host "Backing up D:\data\as.xc on $serverName..."
-        Invoke-Command -Session $session -ScriptBlock { 
-          Copy-Item "$additionalFilePath" "$additionalFilePath.$timestamp" -ErrorAction SilentlyContinue
-        }
-  
-        # Copy additional file from source (modify source path as needed)
-        $sourceFilePath = "C:\path\to\source\as.xc"  # Replace with your source path
-        Start-Process -FilePath Copy-Item -ArgumentList "-Path $sourceFilePath", "D:\data" -Wait -NoNewWindow -Async
-        Write-Host "Copied additional file to D:\data on $serverName."
-      } else {
-        Write-Host "Additional file D:\data\as.xc not found on $serverName."
-      }
-    } else {
-      # Server doesn't need additional file check, continue with previous logic
-      # ... rest of the code for checking and copying previous folders (unchanged) ...
-    }
-  } catch {
-    # ... error handling (unchanged) ...
-  } finally {
-    # ... close session (unchanged) ...
-  }
-}
-
-# Read server list from file
-$servers = Get-Content $serverListPath
-
-# Process servers in parallel using Invoke-Command with error handling
-$failedServers = Invoke-Command -ScriptBlock { Check-Server $_ } -ComputerName $servers -Wait -ThrottleLimit 5 -ErrorAction Stop
-
-# Check if any servers failed to connect
-if ($failedServers) {
-  Write-Warning "Failed to connect to the following servers:"
-  Write-Host ($failedServers | Out-String)
-} else {
-  Write-Host "Successfully processed all servers."
-}
-
-# Script execution complete message
-Write-Host "Script execution complete."
-+++±++++++++++++++++++++++++++
-# Define server list file path (replace with your actual path)
-$serverListPath = "C:\servers.txt"
-
-# Define error log file path (replace with your actual path)
-$errorLogPath = "C:\server_errors.log"
-
-# Define list of allowed servers
-$allowedServers = @("server1", "server2", "server3")
-
-# Get current timestamp for consistent backup naming
-$timestamp = Get-Date -Format yyyyMMddHHmm
-
-# Function to test RDP connection and perform actions on server
-function Check-Server {
-  param(
-    [string] $serverName
-  )
-
-  try {
-    # Test RDP connection with WinRM
-    Test-Connection -ComputerName $serverName -Credential (Get-Credential) -Count 1 -Quiet
-
-    # Check if server is allowed
-    if ($allowedServers -contains $serverName) {
-      # Create a PowerShell session on the remote server
-      $session = New-PSSession -ComputerName $serverName -Credential (Get-Credential)
-
-      # ... rest of the code for checking folders, files, and copying ...
-
-      # Check for additional file in d:\data\as.xc
-      $additionalFilePath = "D:\data\as.xc"
-      $additionalFileExists = Invoke-Command -Session $session -ScriptBlock { Test-Path $additionalFilePath }
-
-      if ($additionalFileExists) {
-        # Backup additional file with timestamp
-        Write-Host "Backing up D:\data\as.xc on $serverName..."
-        Invoke-Command -Session $session -ScriptBlock { 
-          Copy-Item "$additionalFilePath" "$additionalFilePath.$timestamp" -ErrorAction SilentlyContinue
-        }
-  
-        # Copy additional file from source (modify source path as needed)
-        $sourceFilePath = "C:\path\to\source\as.xc"  # Replace with your source path
-        Start-Process -FilePath Copy-Item -ArgumentList "-Path $sourceFilePath", "D:\data" -Wait -NoNewWindow -Async
-        Write-Host "Copied additional file to D:\data on $serverName."
-      } else {
-        Write-Host "Additional file D:\data\as.xc not found on $serverName."
-      }
-    } else {
-      Write-Warning "Server '$serverName' is not allowed for additional file processing."
-    }
-  } catch {
-    # ... error handling (unchanged) ...
-  } finally {
-    # ... close session (unchanged) ...
-  }
-}
-
-# Read server list from file
-$servers = Get-Content $serverListPath
-
-# Process servers in parallel using Invoke-Command with error handling
-$failedServers = Invoke-Command -ScriptBlock { Check-Server $_ } -ComputerName $servers -Wait -ThrottleLimit 5 -ErrorAction Stop
-
-# Check if any servers failed to connect
-if ($failedServers) {
-  Write-Warning "Failed to connect to the following servers:"
-  Write-Host ($failedServers | Out-String)
-} else {
-  Write-Host "Successfully processed all servers."
-}
-
-# Script execution complete message
-Write-Host "Script execution complete."
-+++++++++++++++++++++++
-# Define server list file path (replace with your actual path)
-$serverListPath = "C:\servers.txt"
-
-# Define error log file path (replace with your actual path)
-$errorLogPath = "C:\server_errors.log"
-
-# Get current timestamp for consistent backup naming
-$timestamp = Get-Date -Format yyyyMMddHHmm
-
-# Function to test RDP connection and perform actions on server
-function Check-Server {
-  param(
-    [string] $serverName
-  )
-
-  try {
-    # Test RDP connection with WinRM
-    Test-Connection -ComputerName $serverName -Credential (Get-Credential) -Count 1 -Quiet
-
-    # Create a PowerShell session on the remote server
-    $session = New-PSSession -ComputerName $serverName -Credential (Get-Credential)
-
-    # ... rest of the code for checking folders, files, and copying (unchanged) ...
-
-    # Get source file MD5 hash
-    $sourceFilePath = $localFilePath
-    $sourceHash = Get-Content -Path $sourceFilePath | Get-FileHash -Algorithm MD5
-
-    # Get copied file MD5 hash on remote server
-    $copiedFilePath = "$folderPath\$localFileName"
-    $copiedHash = Invoke-Command -Session $session -ScriptBlock { Get-Content "$copiedFilePath" | Get-FileHash -Algorithm MD5 }
-
-    # Compare MD5 hashes
-    if ($sourceHash -eq $copiedHash) {
-      Write-Host "File copied successfully and verified with MD5 on $serverName - $folderPath."
-    } else {
-      Write-Warning "MD5 checksum mismatch on $serverName - $folderPath. Copy may have failed."
-    }
-  } catch {
-    # ... error handling (unchanged) ...
-  } finally {
-    # ... close session (unchanged) ...
-  }
-}
-
-# Read server list from file
-$servers = Get-Content $serverListPath
-
-# Process servers in parallel using Invoke-Command with error handling
-$failedServers = Invoke-Command -ScriptBlock { Check-Server $_ } -ComputerName $servers -Wait -ThrottleLimit 5 -ErrorAction Stop
-
-# Check if any servers failed to connect
-if ($failedServers) {
-  Write-Warning "Failed to connect to the following servers:"
-  Write-Host ($failedServers | Out-String)
-} else {
-  Write-Host "Successfully processed all servers."
-}
-
-# Script execution complete message
-Write-Host "Script execution complete."
-++++++++++++++++
-# Define function to get file size
-function Get-FileSize {
-  param(
-    [string] $filePath
-  )
-
-  return (Get-Item $filePath).Length
-}
-
-# Function to test RDP connection and perform actions on server
-function Check-Server {
-  param(
-    [string] $serverName
-  )
-
-  try {
-    # ... rest of the code (unchanged until copying) ...
-
-    # Copy local file to remote server
-    Start-Process -FilePath Copy-Item -ArgumentList "-Path $localFilePath", "$folderPath" -Wait -NoNewWindow -Async
-
-    # Get source file size
-    $sourceFileSize = Get-FileSize $localFilePath
-
-    # Check copied file size on remote server
-    $copiedFileSize = Invoke-Command -Session $session -ScriptBlock { Get-FileSize "$folderPath\$localFileName" }
-
-    if ($sourceFileSize -eq $copiedFileSize) {
-      Write-Host "File copied successfully to $serverName - $folderPath."
-    } else {
-      Write-Warning "File size mismatch on $serverName - $folderPath. Copy may have failed."
-    }
-  } catch {
-    # ... error handling (unchanged) ...
-  } finally {
-
-    # ... close session (unchanged) ...
-  }
-}
-+++++++++++++++++++
-# Function to test RDP connection and perform actions on server
-function Check-Server {
-  param(
-    [string] $serverName
-  )
-
-  try {
-    # Test RDP connection with WinRM
-    Test-Connection -ComputerName $serverName -Credential (Get-Credential) -Count 1 -Quiet
-
-    # Create a PowerShell session on the remote server
-    $session = New-PSSession -ComputerName $serverName -Credential (Get-Credential)
-
-    # ... rest of the code for checking folders, files, and copying ...
-
-    # Check if copied file exists (assuming the copied file has the same name)
-    $copiedFilePath = "$folderPath\$localFileName"
-    if (Invoke-Command -Session $session -ScriptBlock { Test-Path $copiedFilePath }) {
-      Write-Host "File copied successfully to $serverName - $folderPath."
-    } else {
-      Write-Warning "Failed to verify copied file on $serverName - $folderPath."
-    }
-  } catch {
-    # ... error handling (unchanged) ...
-  } finally {
-    # ... close session (unchanged) ...
-  }
-}
-
-
-++++++
-# Define server list file path (replace with your actual path)
-$serverListPath = "C:\servers.txt"
-
-# Define error log file path (replace with your actual path)
-$errorLogPath = "C:\server_errors.log"
-
-# Get current timestamp for consistent backup naming
-$timestamp = Get-Date -Format yyyyMMddHHmm
-
-# Function to test RDP connection and perform actions on server
-function Check-Server {
-  param(
-    [string] $serverName
-  )
-
-  try {
-    # Test RDP connection with WinRM
-    Test-Connection -ComputerName $serverName -Credential (Get-Credential) -Count 1 -Quiet
-
-    # Create a PowerShell session on the remote server
-    $session = New-PSSession -ComputerName $serverName -Credential (Get-Credential)
-
-    # ... rest of the code for checking folders, files, and copying (unchanged) ...
-
-  } catch {
-    # Log error details to file
-    Write-Error "Error connecting to $serverName: $($_.Exception.Message)" | Out-File -Append $errorLogPath
-  } finally {
-    # Close the PowerShell session (if created)
-    if ($session) {
-      Remove-PSSession $session
-    }
-  }
-}
-
-# Read server list from file
-$servers = Get-Content $serverListPath
-
-# Process servers in parallel using Invoke-Command with error handling
-$failedServers = Invoke-Command -ScriptBlock { Check-Server $_ } -ComputerName $servers -Wait -ThrottleLimit 5 -ErrorAction Stop
-
-# Check if any servers failed to connect
-if ($failedServers) {
-  Write-Warning "Failed to connect to the following servers:"
-  Write-Host ($failedServers | Out-String)
-} else {
-  Write-Host "Successfully processed all servers."
-}
-
-# Script execution complete message
-Write-Host "Script execution complete."
-
-//////////////
-# Define server list file path (replace with your actual path)
-$serverListPath = "C:\servers.txt"
-
-# Get current timestamp for consistent backup naming
-$timestamp = Get-Date -Format yyyyMMddHHmm
-
-# Function to test RDP connection and perform actions on server
-function Check-Server {
-  param(
-    [string] $serverName
-  )
-
-  try {
-    # Test RDP connection with WinRM
-    Test-Connection -ComputerName $serverName -Credential (Get-Credential) -Count 1 -Quiet
-
-    # Create a PowerShell session on the remote server
-    $session = New-PSSession -ComputerName $serverName -Credential (Get-Credential)
-
     # Define folder paths to check
-    $folders = @("C:\ProgramData\folder1", "C:\ProgramData\main\folder1", "C:\ProgramData\main\folder1\folder2", "C:\ProgramData\main\folder1\folder3", "D:\data")
+    $folders = @("C:\ProgramData\folder1", "C:\ProgramData\main\folder1", "C:\ProgramData\main\folder1\folder2", "C:\ProgramData\main\folder1\folder3", "D:\data")  
 
     foreach ($folderPath in $folders) {
       # Check for folder existence
@@ -377,25 +46,43 @@ function Check-Server {
         # Copy local file to remote server (parallel execution)
         Start-Process -FilePath Copy-Item -ArgumentList "-Path $localFilePath", "$folderPath" -Wait -NoNewWindow -Async
 
-        Write-Host "Successfully copied file to $serverName - $folderPath."
+        # Check if copied file exists (assuming the copied file has the same name)
+        $copiedFilePath = "$folderPath\$localFileName"
+        if (Invoke-Command -Session $session -ScriptBlock { Test-Path $copiedFilePath }) {
+          Write-Host "File copied successfully to $serverName - $folderPath."
+        } else {
+          Write-Warning "Failed to verify copied file on $serverName - $folderPath."
+        }
       } else {
         Write-Host "Folder '$folderPath' not found on $serverName."
       }
     }
 
-    # Close the PowerShell session
-    Remove-PSSession $session
+    # Check if server needs additional file check
+    if ($serversToCheckAdditionalFile -contains $serverName) {
+      # Check for additional file in d:\data\as.xc
+      $additionalFilePath = "D:\data\as.xc"
+      $additionalFileExists = Invoke-Command -Session $session -ScriptBlock { Test-Path $additionalFilePath }
+
+      if ($additionalFileExists) {
+        # Backup additional file with timestamp
+        Write-Host "Backing up D:\data\as.xc on $serverName..."
+        Invoke-Command -Session $session -ScriptBlock { 
+          Copy-Item "$additionalFilePath" "$additionalFilePath.$timestamp" -ErrorAction SilentlyContinue
+        }
+  
+        # Copy additional file from source (modify source path as needed)
+        $sourceFilePath = "C:\path\to\source\as.xc"  # Replace with your source path
+        Start-Process -FilePath Copy-Item -ArgumentList "-Path $sourceFilePath", "D:\data" -Wait -NoNewWindow -Async
+        Write-Host "Copied additional file to D:\data on $serverName."
+      } else {
+        Write-Host "Additional file D:\data\as.xc not found on $serverName."
+      }
+    } 
   } catch {
-    Write-Warning "Error connecting to $serverName: $($_.Exception.Message)"
-  }
-}
-
-# Read server list from file
-$servers = Get-Content $serverListPath
-
-# Process servers in parallel using Invoke-Command
-Invoke-Command -ScriptBlock { Check-Server $_ } -ComputerName $servers -Wait -ThrottleLimit 5
-
-Write-Host "Script execution complete."
-
-
+    # Log error details to file
+    Write-Error "Error connecting to $serverName: $($_.Exception.Message)" | Out-File -Append $errorLogPath
+  } finally {
+    # Close the PowerShell session (if created)
+    if ($session) {
+      Remove-
