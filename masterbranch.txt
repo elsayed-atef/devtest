@@ -86,3 +86,94 @@ function Check-Server {
     # Close the PowerShell session (if created)
     if ($session) {
       Remove-
+
+
+
+////////////////////
+# Define server list file path (replace with your actual path)
+$serverListPath = "C:\servers.txt"
+
+# Define error log file path (replace with your actual path)
+$errorLogPath = "C:\server_errors.log"
+
+# Define list of allowed servers for additional file check
+$serversToCheckAdditionalFile = @("server1", "server2", "server3")
+
+# Get current timestamp for consistent backup naming
+$timestamp = Get-Date -Format yyyyMMddHHmm
+
+# Function to test RDP connection and perform actions on server
+function Check-Server {
+  param(
+    [string] $serverName
+  )
+
+  try {
+    # Test RDP connection with WinRM
+    Test-Connection -ComputerName $serverName -Credential (Get-Credential) -Count 1 -Quiet
+
+    # Create a PowerShell session on the remote server
+    $session = New-PSSession -ComputerName $serverName -Credential (Get-Credential)
+
+    # Define folder paths to check
+    $folders = @("C:\ProgramData\folder1", "C:\ProgramData\main\folder1", "C:\ProgramData\main\folder1\folder2", "C:\ProgramData\main\folder1\folder3", "D:\data")  
+
+    foreach ($folderPath in $folders) {
+      # Check for folder existence
+      if (Invoke-Command -Session $session -ScriptBlock { Test-Path $folderPath }) {
+        # Check for XYZ.rbf file
+        $fileExists = Invoke-Command -Session $session -ScriptBlock { Test-Path "$folderPath\XYZ.rbf" }
+
+        if ($fileExists) {
+          # Backup existing file with timestamp
+          Write-Host "Backing up XYZ.rbf on $serverName - $folderPath..."
+          Invoke-Command -Session $session -ScriptBlock { 
+            Copy-Item "$folderPath\XYZ.rbf" "$folderPath\XYZ.rbf.$timestamp" -ErrorAction SilentlyContinue
+          }
+        }
+
+        # Define local file path (replace with your actual path)
+        $localFilePath = "C:\path\to\your\file.txt"
+
+        # Copy local file to remote server (parallel execution)
+        Start-Process -FilePath Copy-Item -ArgumentList "-Path $localFilePath", "$folderPath" -Wait -NoNewWindow -Async
+
+        # Check if copied file exists (assuming the copied file has the same name)
+        $copiedFilePath = "$folderPath\$localFileName"
+        if (Invoke-Command -Session $session -ScriptBlock { Test-Path $copiedFilePath }) {
+          Write-Host "File copied successfully to $serverName - $folderPath."
+        } else {
+          Write-Warning "Failed to verify copied file on $serverName - $folderPath."
+        }
+      } else {
+        Write-Host "Folder '$folderPath' not found on $serverName."
+      }
+    }
+
+    # Check if server needs additional file check
+    if ($serversToCheckAdditionalFile -contains $serverName) {
+      # Check for additional file in d:\data\as.xc
+      $additionalFilePath = "D:\data\as.xc"
+      $additionalFileExists = Invoke-Command -Session $session -ScriptBlock { Test-Path $additionalFilePath }
+
+      if ($additionalFileExists) {
+        # Backup additional file with timestamp
+        Write-Host "Backing up D:\data\as.xc on $serverName..."
+        Invoke-Command -Session $session -ScriptBlock { 
+          Copy-Item "$additionalFilePath" "$additionalFilePath.$timestamp" -ErrorAction SilentlyContinue
+        }
+  
+        # Copy additional file from source (modify source path as needed)
+        $sourceFilePath = "C:\path\to\source\as.xc"  # Replace with your source path
+        Start-Process -FilePath Copy-Item -ArgumentList "-Path $sourceFilePath", "D:\data" -Wait -NoNewWindow -Async
+        Write-Host "Copied additional file to D:\data on $serverName."
+      } else {
+        Write-Host "Additional file D:\data\as.xc not found on $serverName."
+      }
+    } 
+  } catch {
+    # Log error details to file
+    Write-Error "Error connecting to $serverName: $($_.Exception.Message)" | Out-File -Append $errorLogPath
+  } finally {
+    # Close the PowerShell session (if
+
