@@ -2,7 +2,6 @@ import csv
 import socket
 from concurrent.futures import ThreadPoolExecutor
 
-
 def resolve_ip_address(ip_address):
     """
     Resolves a single IP address to its hostname.
@@ -17,7 +16,6 @@ def resolve_ip_address(ip_address):
         return socket.gethostbyaddr(ip_address)[0]
     except socket.herror as e:
         return f"Error resolving {ip_address}: {e}"
-
 
 def resolve_ip_addresses_parallel(input_file, output_file, num_workers=4):
     """
@@ -48,8 +46,12 @@ def resolve_ip_addresses_parallel(input_file, output_file, num_workers=4):
         headers.insert(ip_column_index + 1, 'Hostname')
         writer.writerow(headers)
 
-        # Extract IP addresses for parallel processing
-        ip_addresses = [row[ip_column_index] for row in reader]
+        # Extract IP addresses and rows for parallel processing
+        ip_addresses = []
+        rows = []
+        for row in reader:
+            ip_addresses.append(row[ip_column_index])
+            rows.append(row)
 
         try:
             # Use ThreadPoolExecutor for parallel resolution
@@ -57,13 +59,17 @@ def resolve_ip_addresses_parallel(input_file, output_file, num_workers=4):
                 resolved_hostnames = list(executor.map(resolve_ip_address, ip_addresses))
 
             # Write updated data with resolved hostnames
-            for row, hostname in zip(csvfile, resolved_hostnames):
+            for row, hostname in zip(rows, resolved_hostnames):
                 row.insert(ip_column_index + 1, hostname)
                 writer.writerow(row)
         except Exception as e:  # Catch any unexpected errors
             print(f"An error occurred during parallel processing: {e}")
 
-
 # Example usage
 input_file = 'your_data.csv'
-output_file = 'data_with_hostnames_parallel_fixed2.
+output_file = 'data_with_hostnames_parallel_nozip.csv'
+num_workers = 8  # Adjust this based on your hardware capabilities
+
+resolve_ip_addresses_parallel(input_file, output_file, num_workers)
+
+print(f"IP address resolution complete (parallel). Output written to: {output_file}")
