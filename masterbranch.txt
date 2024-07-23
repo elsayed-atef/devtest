@@ -1,6 +1,7 @@
 import csv
 import socket
 from concurrent.futures import ThreadPoolExecutor
+from collections import defaultdict
 
 def resolve_ip_address(ip_address):
     """
@@ -17,9 +18,9 @@ def resolve_ip_address(ip_address):
     except socket.herror as e:
         return f"Error resolving {ip_address}: {e}"
 
-def resolve_ip_addresses_parallel(input_file, output_file, num_workers=4):
+def process_csv(input_file, output_file, num_workers=4):
     """
-    Reads a CSV file, resolves IP addresses to hostnames in parallel, and writes the data with a new hostname column.
+    Reads a CSV file, resolves IP addresses to hostnames in parallel, counts IP occurrences and success/failure, and writes the data with new columns.
 
     Args:
         input_file (str): Path to the input CSV file.
@@ -27,49 +28,52 @@ def resolve_ip_addresses_parallel(input_file, output_file, num_workers=4):
         num_workers (int, optional): Number of worker threads to use for parallel resolution. Defaults to 4.
     """
 
+    ip_counts = defaultdict(int)
+    ip_success_counts = defaultdict(int)
+    ip_failure_counts = defaultdict(int)
+
     with open(input_file, 'r', newline='') as csvfile, open(output_file, 'w', newline='') as outfile:
         reader = csv.reader(csvfile)
         writer = csv.writer(outfile)
 
         # Get column names and identify the IP address column index
         headers = next(reader)
-        ip_column_index = None
-        for i, header in enumerate(headers):
-            if header.lower() == 'ip address' or header.lower() == 'ip':
-                ip_column_index = i
-                break
+        source_ip_index = headers.index('Source_IP')
+        fs_index = headers.index('F/S')
 
-        if ip_column_index is None:
-            raise ValueError("Could not find a column named 'IP Address' or 'IP'")
-
-        # Write the header row with the added hostname column
-        headers.insert(ip_column_index + 1, 'Hostname')
+        # Write the header row with added columns
+        headers.extend(['Hostname', 'IP Count', 'Success Count', 'Failure Count'])
         writer.writerow(headers)
 
-        # Extract IP addresses and rows for parallel processing
+        # Extract IP addresses, rows, and F/S values for parallel processing
         ip_addresses = []
         rows = []
-        for row in reader:
-            ip_addresses.append(row[ip_column_index])
+        fs_values = []
+        for row_index, row in enumerate(reader):
+            ip_addresses.append(row[source_ip_index])
             rows.append(row)
+            fs_values.append(row[fs_index])
+            ip_counts[row[source_ip_index]] += 1
 
         try:
             # Use ThreadPoolExecutor for parallel resolution
             with ThreadPoolExecutor(max_workers=num_workers) as executor:
                 resolved_hostnames = list(executor.map(resolve_ip_address, ip_addresses))
 
-            # Write updated data with resolved hostnames
-            for row, hostname in zip(rows, resolved_hostnames):
-                row.insert(ip_column_index + 1, hostname)
+            # Write updated data with resolved hostnames and counts
+            for row_index, (row, hostname, fs) in enumerate(zip(rows, resolved_hostnames, fs_values)):
+                ip_success_counts[row[source_ip_index]] += (fs == 'Success')
+                ip_failure_counts[row[source_ip_index]] += (fs == 'Failure')
+                row.extend([hostname, ip_counts[row[source_ip_index]], ip_success_counts[row[source_ip_index]], ip_failure_counts[row[source_ip_index]]])
                 writer.writerow(row)
         except Exception as e:  # Catch any unexpected errors
             print(f"An error occurred during parallel processing: {e}")
 
 # Example usage
 input_file = 'your_data.csv'
-output_file = 'data_with_hostnames_parallel_nozip.csv'
+output_file = 'data_with_hostnames_and_counts_nozip.csv'
 num_workers = 8  # Adjust this based on your hardware capabilities
 
-resolve_ip_addresses_parallel(input_file, output_file, num_workers)
+process_csv(input_file, output_file, num_workers)
 
 print(f"IP address resolution complete (parallel). Output written to: {output_file}")
