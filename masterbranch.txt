@@ -1,26 +1,3 @@
-
-<?xml version="1.0" encoding="utf-8"?>
-<HousekeepingConfig>
-  <FolderConfig>
-    <Path>D:\DATA</Path>
-    <Enabled>true</Enabled>
-    <RetentionPeriodInDays>30</RetentionPeriodInDays>
-    <ExcludeFolders>
-      <FolderPattern>*.log</FolderPattern>
-    </ExcludeFolders>
-    <IncludeSubfolders>true</IncludeSubfolders>
-  </FolderConfig>
-  <FolderConfig>
-    <Path>D:\DATA\logs</Path>
-    <Enabled>true</Enabled>
-    <RetentionPeriodInDays>60</RetentionPeriodInDays>
-    </FolderConfig>
-</HousekeepingConfig>
-
-
-
-
------------
 param(
     [Parameter(Mandatory=$true, Position=0)]
     [string]$configFile
@@ -47,7 +24,11 @@ foreach ($folderConfig in $config.HousekeepingConfig.FolderConfig) {
     if ($enabled) {
         Write-Host "Processing folder: $path"
 
-        $searchPath = $includeSubfolders ? $path : "$path/*"
+        if ($includeSubfolders) {
+            $searchPath = $path
+        } else {
+            $searchPath = "$path/*"
+        }
 
         $oldFiles = Get-ChildItem -Path $searchPath -Recurse -File -Force | Where-Object {
             $_.LastWriteTime -lt (Get-Date).AddDays(-$retentionPeriod) -and -not (IsExcludedFolder $_.DirectoryName, $excludeFolders)
