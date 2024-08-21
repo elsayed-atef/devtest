@@ -1,3 +1,26 @@
+
+<?xml version="1.0" encoding="utf-8"?>
+<HousekeepingConfig>
+  <FolderConfig>
+    <Path>D:\DATA</Path>
+    <Enabled>true</Enabled>
+    <RetentionPeriodInDays>30</RetentionPeriodInDays>
+    <ExcludeFolders>
+      <FolderPattern>*.log</FolderPattern>
+    </ExcludeFolders>
+    <IncludeSubfolders>true</IncludeSubfolders>
+  </FolderConfig>
+  <FolderConfig>
+    <Path>D:\DATA\logs</Path>
+    <Enabled>true</Enabled>
+    <RetentionPeriodInDays>60</RetentionPeriodInDays>
+    </FolderConfig>
+</HousekeepingConfig>
+
+
+
+
+-----------
 param(
     [Parameter(Mandatory=$true, Position=0)]
     [string]$configFile
