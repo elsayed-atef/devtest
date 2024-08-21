@@ -1,79 +1,43 @@
-import csv
-import socket
-from concurrent.futures import ThreadPoolExecutor
-from collections import defaultdict
+param(
+    [Parameter(Mandatory=$true, Position=0)]
+    [string]$configFile
+)
 
-def resolve_ip_address(ip_address):
-    """
-    Resolves a single IP address to its hostname.
+function IsExcludedFolder($folderPath, $excludeFolders) {
+    foreach ($pattern in $excludeFolders) {
+        if ($folderPath -like "*$pattern*") {
+            return $true
+        }
+    }
+    return $false
+}
 
-    Args:
-        ip_address (str): The IP address to resolve.
+[xml]$config = Get-Content $configFile
 
-    Returns:
-        str: The resolved hostname or an error message if unsuccessful.
-    """
-    try:
-        return socket.gethostbyaddr(ip_address)[0]
-    except socket.herror as e:
-        return f"Error resolving {ip_address}: {e}"
+foreach ($folderConfig in $config.HousekeepingConfig.FolderConfig) {
+    $path = $folderConfig.Path
+    $enabled = $folderConfig.Enabled -eq "true"
+    $retentionPeriod = [int]$folderConfig.RetentionPeriodInDays
+    $excludeFolders = $folderConfig.ExcludeFolders.FolderPattern | Select-Object -ExpandProperty Text
+    $includeSubfolders = $folderConfig.IncludeSubfolders -eq "true"
 
-def process_csv(input_file, output_file, num_workers=4):
-    """
-    Reads a CSV file, resolves IP addresses to hostnames in parallel, counts IP occurrences and success/failure, and writes the data with new columns.
+    if ($enabled) {
+        Write-Host "Processing folder: $path"
 
-    Args:
-        input_file (str): Path to the input CSV file.
-        output_file (str): Path to the output CSV file.
-        num_workers (int, optional): Number of worker threads to use for parallel resolution. Defaults to 4.
-    """
+        $searchPath = $includeSubfolders ? $path : "$path/*"
 
-    ip_counts = defaultdict(int)
-    ip_success_counts = defaultdict(int)
-    ip_failure_counts = defaultdict(int)
+        $oldFiles = Get-ChildItem -Path $searchPath -Recurse -File -Force | Where-Object {
+            $_.LastWriteTime -lt (Get-Date).AddDays(-$retentionPeriod) -and -not (IsExcludedFolder $_.DirectoryName, $excludeFolders)
+        }
 
-    with open(input_file, 'r', newline='') as csvfile, open(output_file, 'w', newline='') as outfile:
-        reader = csv.reader(csvfile)
-        writer = csv.writer(outfile)
-
-        # Get column names and identify the IP address column index
-        headers = next(reader)
-        source_ip_index = headers.index('Source_IP')
-        fs_index = headers.index('F/S')
-
-        # Write the header row with added columns
-        headers.extend(['Hostname', 'IP Count', 'Success Count', 'Failure Count'])
-        writer.writerow(headers)
-
-        # Extract IP addresses, rows, and F/S values for parallel processing
-        ip_addresses = []
-        rows = []
-        fs_values = []
-        for row_index, row in enumerate(reader):
-            ip_addresses.append(row[source_ip_index])
-            rows.append(row)
-            fs_values.append(row[fs_index])
-            ip_counts[row[source_ip_index]] += 1
-
-        try:
-            # Use ThreadPoolExecutor for parallel resolution
-            with ThreadPoolExecutor(max_workers=num_workers) as executor:
-                resolved_hostnames = list(executor.map(resolve_ip_address, ip_addresses))
-
-            # Write updated data with resolved hostnames and counts
-            for row_index, (row, hostname, fs) in enumerate(zip(rows, resolved_hostnames, fs_values)):
-                ip_success_counts[row[source_ip_index]] += (fs == 'Success')
-                ip_failure_counts[row[source_ip_index]] += (fs == 'Failure')
-                row.extend([hostname, ip_counts[row[source_ip_index]], ip_success_counts[row[source_ip_index]], ip_failure_counts[row[source_ip_index]]])
-                writer.writerow(row)
-        except Exception as e:  # Catch any unexpected errors
-            print(f"An error occurred during parallel processing: {e}")
-
-# Example usage
-input_file = 'your_data.csv'
-output_file = 'data_with_hostnames_and_counts_nozip.csv'
-num_workers = 8  # Adjust this based on your hardware capabilities
-
-process_csv(input_file, output_file, num_workers)
-
-print(f"IP address resolution complete (parallel). Output written to: {output_file}")
+        if ($oldFiles) {
+            Write-Host "Deleting old files in $path:"
+            $oldFiles | Format-Table -AutoSize
+            $oldFiles | Remove-Item -Force
+        } else {
+            Write-Host "No old files found in $path."
+        }
+    } else {
+        Write-Host "Housekeeping disabled for folder: $path"
+    }
+}
