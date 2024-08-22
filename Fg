@@ -76,7 +76,7 @@ function Clean-Folder {
                          Where-Object {
                              $include = $true
                              foreach ($exclude in $ExcludeFolders) {
-                                 if ($_.FullName -like "${exclude}*") {
+                                 if ($_.FullName -like "$exclude*") {
                                      $include = $false
                                      break
                                  }
