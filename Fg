@@ -30,6 +30,9 @@ function Archive-File {
         [string]$archivePath
     )
     $archiveDir = Join-Path -Path $archivePath -ChildPath (Split-Path -Leaf $filePath)
+    if (-not (Test-Path $archiveDir)) {
+        New-Item -ItemType Directory -Path $archiveDir -Force
+    }
     Move-Item -Path $filePath -Destination $archiveDir -Force
     Log-Message "Archived file: $filePath to $archiveDir" -LogFile $LogFile
 }
@@ -141,7 +144,7 @@ while ($true) {
     $config = Get-Config -xmlPath $ConfigFile
 
     # Set parameters from config
-    $LogFile = if ($config.LogFile.Path) { $config.LogFile.Path } else { $defaultLogFilePath }
+    $LogFile = if ($config.LogFile.Path) { $config.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
     $DryRun = [bool]$config.DryRun
     $SleepIntervalHours = [int]$config.SleepIntervalHours
 
