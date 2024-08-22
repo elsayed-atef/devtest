@@ -6,21 +6,37 @@
     <SleepIntervalHours>5</SleepIntervalHours>
     
     <!-- Path Rules -->
-    <PathRule>
-        <Enabled>True</Enabled>
-        <Path>C:\temp\logs</Path>
-        <RetentionDays>7</RetentionDays>
-        <IncludeSubfolders>true</IncludeSubfolders>
-        <ExcludeFolders>
-            <ExcludeFolder>C:\temp\logs\exclude1</ExcludeFolder>
-            <ExcludeFolder>C:\temp\logs\exclude2</ExcludeFolder>
-        </ExcludeFolders>
-        <Archive>
+    <PathRules>
+        <PathRule>
             <Enabled>True</Enabled>
-            <Path>D:\archive\logs</Path>
-        </Archive>
-    </PathRule>
-    
+            <Path>C:\temp\logs</Path>
+            <RetentionDays>7</RetentionDays>
+            <IncludeSubfolders>true</IncludeSubfolders>
+            <ExcludeFolders>
+                <ExcludeFolder>C:\temp\logs\exclude1</ExcludeFolder>
+                <ExcludeFolder>C:\temp\logs\exclude2</ExcludeFolder>
+            </ExcludeFolders>
+            <Archive>
+                <Enabled>True</Enabled>
+                <Path>D:\archive\logs</Path>
+            </Archive>
+        </PathRule>
+        <PathRule>
+            <Enabled>True</Enabled>
+            <Path>C:\temp\files</Path>
+            <RetentionDays>10</RetentionDays>
+            <IncludeSubfolders>false</IncludeSubfolders>
+            <ExcludeFolders>
+                <ExcludeFolder>C:\temp\files\do-not-delete</ExcludeFolder>
+            </ExcludeFolders>
+            <Archive>
+                <Enabled>False</Enabled>
+                <Path></Path>
+            </Archive>
+        </PathRule>
+        <!-- Additional PathRule elements can be added here -->
+    </PathRules>
+
     <!-- Memory Dump Rules -->
     <MemoryDumpRules>
         <MemoryDumpRule>
@@ -35,5 +51,6 @@
             <RetentionDays>30</RetentionDays>
             <IncludeSubfolders>false</IncludeSubfolders>
         </MemoryDumpRule>
+        <!-- Additional MemoryDumpRule elements can be added here -->
     </MemoryDumpRules>
 </Housekeeping>
