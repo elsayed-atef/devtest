@@ -167,7 +167,7 @@ function Apply-Housekeeping {
         $logFilePath = if ($config.Housekeeping.LogFile.Path) { $config.Housekeeping.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
         Log-Message -message "Applying housekeeping rules from config: $($config.OuterXml)" -LogFile $logFilePath
 
-        if ($config.Housekeeping.PathRules.PathRule) {
+        if ($config.Housekeeping.PathRules -and $config.Housekeeping.PathRules.PathRule) {
             foreach ($rule in $config.Housekeeping.PathRules.PathRule) {
                 if ($rule.Enabled -eq 'True') {
                     $path = $rule.Path
@@ -175,7 +175,7 @@ function Apply-Housekeeping {
                     $includeSubfolders = [bool]$rule.IncludeSubfolders
                     $excludeFolders = @()
 
-                    if ($rule.ExcludeFolders.ExcludeFolder) {
+                    if ($rule.ExcludeFolders -and $rule.ExcludeFolders.ExcludeFolder) {
                         $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText.Trim() }
                     }
 
@@ -191,7 +191,11 @@ function Apply-Housekeeping {
         }
 
         # Clean memory dumps
-        Clean-MemoryDumps -memoryDumpRules $config.Housekeeping.MemoryDumpRules
+        if ($config.Housekeeping.MemoryDumpRules) {
+            Clean-MemoryDumps -memoryDumpRules $config.Housekeeping.MemoryDumpRules
+        } else {
+            Log-Message -message "No memory dump rules found." -LogFile $logFilePath
+        }
     } catch {
         Log-Message -message "Error applying housekeeping rules: $_" -LogFile $logFilePath
     }
