@@ -166,7 +166,7 @@ function Apply-Housekeeping {
                 $excludeFolders = @()
 
                 if ($rule.ExcludeFolders.ExcludeFolder) {
-                    $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText }
+                    $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText.Trim() }
                 }
 
                 $enableArchive = [bool]$rule.Archive.Enabled
