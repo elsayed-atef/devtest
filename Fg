@@ -1,29 +1,26 @@
 [CmdletBinding()]
 param (
-    [string]$ConfigFile = "C:\housekeeping_config.xml",
-    [bool]$DryRun = $false
+    [string]$ConfigFile = "C:\housekeeping_config.xml"
 )
 
 # Function to load and parse XML configuration
-function Get-Config {
+function Load-Config {
     param (
         [string]$xmlPath
     )
-
-    if (-not (Test-Path $xmlPath)) {
-        throw "Configuration file not found: $xmlPath"
-    }
-
     try {
-        [xml]$xml = Get-Content $xmlPath
-        Log-Message -message "Loaded XML configuration: $($xml.OuterXml)" -LogFile $LogFile
-        return $xml
+        if (-not (Test-Path $xmlPath)) {
+            throw "Configuration file not found: $xmlPath"
+        }
+
+        [xml]$config = [xml](Get-Content $xmlPath)
+        return $config
     } catch {
         throw "Failed to read or parse the XML file: $_"
     }
 }
 
-# Function to log messages with debug level
+# Function to log messages
 function Log-Message {
     param (
         [string]$message,
@@ -38,10 +35,10 @@ function Log-Message {
 function Archive-File {
     param (
         [string]$filePath,
-        [string]$archivePath
+        [string]$archivePath,
+        [string]$LogFile
     )
     try {
-        Log-Message -message "Attempting to archive file: $filePath to $archivePath" -LogFile $LogFile
         $archiveDir = Join-Path -Path $archivePath -ChildPath (Split-Path -Leaf $filePath)
         if (-not (Test-Path $archiveDir)) {
             New-Item -ItemType Directory -Path $archiveDir -Force
@@ -61,17 +58,16 @@ function Clean-Folder {
         [bool]$IncludeSubfolders,
         [string[]]$ExcludeFolders,
         [bool]$EnableArchive,
-        [string]$ArchivePath
+        [string]$ArchivePath,
+        [string]$LogFile,
+        [bool]$DryRun
     )
 
     try {
-        Log-Message -message "Cleaning folder: $Path with retention of $RetentionDays days" -LogFile $LogFile
         $currentDate = Get-Date
         $targetDate = $currentDate.AddDays(-$RetentionDays)
 
-        Log-Message -message "Target date for deletion: $targetDate" -LogFile $LogFile
-
-        $filesToDelete = Get-ChildItem -Path $Path -File -Recurse:$IncludeSubfolders |
+        $filesToDelete = Get-ChildItem -Path $Path -File -Recurse:$IncludeSubfolders | 
                          Where-Object { $_.LastWriteTime -lt $targetDate } |
                          Where-Object {
                              $include = $true
@@ -84,14 +80,12 @@ function Clean-Folder {
                              return $include
                          }
 
-        Log-Message -message "Files to delete: $($filesToDelete.Count)" -LogFile $LogFile
-
         foreach ($file in $filesToDelete) {
             if ($DryRun) {
                 Log-Message -message "Dry Run: Would delete file: $($file.FullName)" -LogFile $LogFile
             } else {
                 if ($EnableArchive) {
-                    Archive-File -filePath $file.FullName -archivePath $ArchivePath
+                    Archive-File -filePath $file.FullName -archivePath $ArchivePath -LogFile $LogFile
                 } else {
                     Remove-Item -Path $file.FullName -Force
                     Log-Message -message "Deleted file: $($file.FullName)" -LogFile $LogFile
@@ -106,124 +100,83 @@ function Clean-Folder {
 # Function to clean memory dumps
 function Clean-MemoryDumps {
     param (
-        [xml]$memoryDumpRules
+        [string]$Path,
+        [int]$RetentionDays,
+        [bool]$IncludeSubfolders,
+        [string]$LogFile,
+        [bool]$DryRun
     )
 
     try {
-        if (-not $memoryDumpRules) {
-            Log-Message -message "No memory dump rules provided." -LogFile $LogFile
-            return
-        }
+        $currentDate = Get-Date
+        $targetDate = $currentDate.AddDays(-$RetentionDays)
 
-        foreach ($rule in $memoryDumpRules.MemoryDumpRule) {
-            try {
-                if ($rule.Enabled -eq 'True') {
-                    $path = $rule.Path
-                    $retentionDays = [int]$rule.RetentionDays
-                    $includeSubfolders = [bool]$rule.IncludeSubfolders
+        $dumpsToDelete = Get-ChildItem -Path $Path -File -Recurse:$IncludeSubfolders |
+                         Where-Object { $_.LastWriteTime -lt $targetDate }
 
-                    Log-Message -message "Cleaning memory dumps in: $path with retention of $retentionDays days" -LogFile $LogFile
-
-                    if (-not (Test-Path $path)) {
-                        Log-Message -message "Memory dump folder not found: $path" -LogFile $LogFile
-                        continue
-                    }
-
-                    $currentDate = Get-Date
-                    $targetDate = $currentDate.AddDays(-$retentionDays)
-
-                    Log-Message -message "Target date for memory dumps: $targetDate" -LogFile $LogFile
-
-                    $dumpsToDelete = Get-ChildItem -Path $path -File -Recurse:$includeSubfolders |
-                                     Where-Object { $_.LastWriteTime -lt $targetDate }
-
-                    Log-Message -message "Memory dumps to delete: $($dumpsToDelete.Count)" -LogFile $LogFile
-
-                    foreach ($dump in $dumpsToDelete) {
-                        if ($DryRun) {
-                            Log-Message -message "Dry Run: Would delete memory dump: $($dump.FullName)" -LogFile $LogFile
-                        } else {
-                            Remove-Item -Path $dump.FullName -Force
-                            Log-Message -message "Deleted memory dump: $($dump.FullName)" -LogFile $LogFile
-                        }
-                    }
-                }
-            } catch {
-                Log-Message -message "Error processing memory dump rule: $_" -LogFile $LogFile
+        foreach ($dump in $dumpsToDelete) {
+            if ($DryRun) {
+                Log-Message -message "Dry Run: Would delete memory dump: $($dump.FullName)" -LogFile $LogFile
+            } else {
+                Remove-Item -Path $dump.FullName -Force
+                Log-Message -message "Deleted memory dump: $($dump.FullName)" -LogFile $LogFile
             }
         }
     } catch {
-        Log-Message -message "Error cleaning memory dumps: $_" -LogFile $LogFile
+        Log-Message -message "Error cleaning memory dumps in $Path: $_" -LogFile $LogFile
     }
 }
 
 # Function to apply housekeeping rules
 function Apply-Housekeeping {
     param (
-        [xml]$config
+        [xml]$config,
+        [string]$LogFile,
+        [bool]$DryRun
     )
 
     try {
-        if (-not $config.Housekeeping) {
-            throw "Housekeeping section is missing in the configuration."
-        }
-
-        $logFilePath = if ($config.Housekeeping.LogFile.Path) { $config.Housekeeping.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
-        Log-Message -message "Applying housekeeping rules from config: $($config.OuterXml)" -LogFile $logFilePath
-
-        if ($config.Housekeeping.PathRules -and $config.Housekeeping.PathRules.PathRule) {
-            foreach ($rule in $config.Housekeeping.PathRules.PathRule) {
-                try {
-                    if ($rule.Enabled -eq 'True') {
-                        $path = $rule.Path
-                        $retentionDays = [int]$rule.RetentionDays
-                        $includeSubfolders = [bool]$rule.IncludeSubfolders
-                        $excludeFolders = @()
-
-                        if ($rule.ExcludeFolders -and $rule.ExcludeFolders.ExcludeFolder) {
-                            $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText.Trim() }
-                        }
-
-                        $enableArchive = [bool]$rule.Archive.Enabled
-                        $archivePath = $rule.Archive.Path
-
-                        Log-Message -message "Applying rule: Path=$path, RetentionDays=$retentionDays, IncludeSubfolders=$includeSubfolders, ExcludeFolders=$($excludeFolders -join ', '), EnableArchive=$enableArchive, ArchivePath=$archivePath" -LogFile $logFilePath
-
-                        # Clean folder based on rule
-                        Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath
-                    }
-                } catch {
-                    Log-Message -message "Error processing path rule: $_" -LogFile $logFilePath
-                }
+        foreach ($rule in $config.Housekeeping.PathRules.PathRule) {
+            $path = $rule.Path
+            $retentionDays = [int]$rule.RetentionDays
+            $includeSubfolders = [bool]$rule.IncludeSubfolders
+            $excludeFolders = @()
+            if ($rule.ExcludeFolders.ExcludeFolder) {
+                $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText.Trim() }
             }
-        } else {
-            Log-Message -message "No path rules found in configuration." -LogFile $logFilePath
+            $enableArchive = [bool]$rule.Archive.Enabled
+            $archivePath = $rule.Archive.Path
+
+            Log-Message -message "Cleaning folder: $path" -LogFile $LogFile
+            Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath -LogFile $LogFile -DryRun $DryRun
         }
 
-        # Clean memory dumps
-        if ($config.Housekeeping.MemoryDumpRules) {
-            Clean-MemoryDumps -memoryDumpRules $config.Housekeeping.MemoryDumpRules
-        } else {
-            Log-Message -message "No memory dump rules found." -LogFile $logFilePath
+        foreach ($memoryRule in $config.Housekeeping.MemoryDumpRules.MemoryDumpRule) {
+            $path = $memoryRule.Path
+            $retentionDays = [int]$memoryRule.RetentionDays
+            $includeSubfolders = [bool]$memoryRule.IncludeSubfolders
+
+            Log-Message -message "Cleaning memory dumps in: $path" -LogFile $LogFile
+            Clean-MemoryDumps -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -LogFile $LogFile -DryRun $DryRun
         }
+
     } catch {
-        Log-Message -message "Error applying housekeeping rules: $_" -LogFile $logFilePath
+        Log-Message -message "Error applying housekeeping rules: $_" -LogFile $LogFile
     }
 }
 
 # Main script execution
-$xmlConfig = Get-Config -xmlPath $ConfigFile
+$config = Load-Config -xmlPath $ConfigFile
 
-# Extract settings from XML
-$LogFile = $xmlConfig.Housekeeping.LogFile.Path
-$DryRun = [bool]$xmlConfig.Housekeeping.DryRun
-$SleepIntervalHours = [int]$xmlConfig.Housekeeping.SleepIntervalHours
+$LogFile = $config.Housekeeping.LogFile.Path
+$DryRun = [bool]$config.Housekeeping.DryRun
+$SleepIntervalHours = [int]$config.Housekeeping.SleepIntervalHours
 
-# Apply housekeeping rules
-Apply-Housekeeping -config $xmlConfig
+# Initial run
+Apply-Housekeeping -config $config -LogFile $LogFile -DryRun $DryRun
 
-# Sleep for specified interval and repeat
+# Re-run the housekeeping task every specified interval
 while ($true) {
     Start-Sleep -Seconds ($SleepIntervalHours * 3600)
-    Apply-Housekeeping -config $xmlConfig
+    Apply-Housekeeping -config $config -LogFile $LogFile -DryRun $DryRun
 }
