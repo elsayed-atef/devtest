@@ -21,20 +21,7 @@
                 <Path>D:\archive\logs</Path>
             </Archive>
         </PathRule>
-        <PathRule>
-            <Enabled>True</Enabled>
-            <Path>C:\temp\files</Path>
-            <RetentionDays>10</RetentionDays>
-            <IncludeSubfolders>false</IncludeSubfolders>
-            <ExcludeFolders>
-                <ExcludeFolder>C:\temp\files\do-not-delete</ExcludeFolder>
-            </ExcludeFolders>
-            <Archive>
-                <Enabled>False</Enabled>
-                <Path></Path>
-            </Archive>
-        </PathRule>
-        <!-- Additional PathRule elements can be added here -->
+        <!-- Additional PathRule elements -->
     </PathRules>
 
     <!-- Memory Dump Rules -->
@@ -45,12 +32,6 @@
             <RetentionDays>14</RetentionDays>
             <IncludeSubfolders>true</IncludeSubfolders>
         </MemoryDumpRule>
-        <MemoryDumpRule>
-            <Enabled>False</Enabled>
-            <Path>C:\AnotherDumpFolder</Path>
-            <RetentionDays>30</RetentionDays>
-            <IncludeSubfolders>false</IncludeSubfolders>
-        </MemoryDumpRule>
-        <!-- Additional MemoryDumpRule elements can be added here -->
+        <!-- Additional MemoryDumpRule elements -->
     </MemoryDumpRules>
 </Housekeeping>
