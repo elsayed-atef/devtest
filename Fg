@@ -156,9 +156,9 @@ function Apply-Housekeeping {
 
     try {
         $logFilePath = if ($config.Housekeeping.LogFile.Path) { $config.Housekeeping.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
-        Log-Message -message "Applying housekeeping rules from config: $($config.OuterXml)" -LogFile $LogFile
+        Log-Message -message "Applying housekeeping rules from config: $($config.OuterXml)" -LogFile $logFilePath
 
-        foreach ($rule in $config.Housekeeping.PathRule) {
+        foreach ($rule in $config.Housekeeping.PathRules.PathRule) {
             if ($rule.Enabled -eq 'True') {
                 $path = $rule.Path
                 $retentionDays = [int]$rule.RetentionDays
@@ -172,45 +172,33 @@ function Apply-Housekeeping {
                 $enableArchive = [bool]$rule.Archive.Enabled
                 $archivePath = $rule.Archive.Path
 
-                Log-Message -message "Applying rule: Path=$path, RetentionDays=$retentionDays, IncludeSubfolders=$includeSubfolders, ExcludeFolders=$($excludeFolders -join ', '), EnableArchive=$enableArchive, ArchivePath=$archivePath" -LogFile $LogFile
+                Log-Message -message "Applying rule: Path=$path, RetentionDays=$retentionDays, IncludeSubfolders=$includeSubfolders, ExcludeFolders=$($excludeFolders -join ', '), EnableArchive=$enableArchive, ArchivePath=$archivePath" -LogFile $logFilePath
 
                 # Clean folder based on rule
                 Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath
             }
         }
+
+        # Clean memory dumps
+        Clean-MemoryDumps -memoryDumpRules $config.Housekeeping.MemoryDumpRules
     } catch {
-        Log-Message -message "Error applying housekeeping rules: $_" -LogFile $LogFile
+        Log-Message -message "Error applying housekeeping rules: $_" -LogFile $logFilePath
     }
 }
 
-# Main loop
+# Main script execution
+$xmlConfig = Get-Config -xmlPath $ConfigFile
+
+# Extract settings from XML
+$LogFile = $xmlConfig.Housekeeping.LogFile.Path
+$DryRun = [bool]$xmlConfig.Housekeeping.DryRun
+$SleepIntervalHours = [int]$xmlConfig.Housekeeping.SleepIntervalHours
+
+# Apply housekeeping rules
+Apply-Housekeeping -config $xmlConfig
+
+# Sleep for specified interval and repeat
 while ($true) {
-    try {
-        # Load configuration
-        $config = Get-Config -xmlPath $ConfigFile
-
-        # Set parameters from config
-        $LogFile = if ($config.Housekeeping.LogFile.Path) { $config.Housekeeping.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
-        $DryRun = [bool]$config.Housekeeping.DryRun
-        $SleepIntervalHours = [int]$config.Housekeeping.SleepIntervalHours
-
-        Log-Message -message "Configuration loaded. LogFile=$LogFile, DryRun=$DryRun, SleepIntervalHours=$SleepIntervalHours" -LogFile $LogFile
-
-        # Start the housekeeping process
-        Log-Message -message "Starting housekeeping process" -LogFile $LogFile
-
-        Apply-Housekeeping -config $config
-
-        if ($config.Housekeeping.MemoryDumpRules) {
-            Clean-MemoryDumps -memoryDumpRules $config.Housekeeping.MemoryDumpRules
-        }
-
-        Log-Message -message "Housekeeping process completed" -LogFile $LogFile
-    } catch {
-        Log-Message -message "Error occurred: $_" -LogFile $LogFile
-    }
-
-    # Sleep for the specified interval before the next run
-    Log-Message -message "Sleeping for $($SleepIntervalHours) hours" -LogFile $LogFile
     Start-Sleep -Seconds ($SleepIntervalHours * 3600)
+    Apply-Housekeeping -config $xmlConfig
 }
