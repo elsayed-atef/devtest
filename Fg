@@ -155,6 +155,10 @@ function Apply-Housekeeping {
     )
 
     try {
+        if (-not $config.Housekeeping) {
+            throw "Housekeeping section is missing in the configuration."
+        }
+
         $logFilePath = if ($config.Housekeeping.LogFile.Path) { $config.Housekeeping.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
         Log-Message -message "Applying housekeeping rules from config: $($config.OuterXml)" -LogFile $logFilePath
 
