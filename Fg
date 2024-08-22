@@ -110,6 +110,11 @@ function Clean-MemoryDumps {
     )
 
     try {
+        if ($memoryDumpRules -eq $null -or $memoryDumpRules.MemoryDumpRule -eq $null) {
+            Log-Message -message "No memory dump rules found or memory dump rules section is missing." -LogFile $LogFile
+            return
+        }
+
         foreach ($rule in $memoryDumpRules.MemoryDumpRule) {
             if ($rule.Enabled -eq 'True') {
                 $path = $rule.Path
@@ -162,24 +167,26 @@ function Apply-Housekeeping {
         $logFilePath = if ($config.Housekeeping.LogFile.Path) { $config.Housekeeping.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
         Log-Message -message "Applying housekeeping rules from config: $($config.OuterXml)" -LogFile $logFilePath
 
-        foreach ($rule in $config.Housekeeping.PathRules.PathRule) {
-            if ($rule.Enabled -eq 'True') {
-                $path = $rule.Path
-                $retentionDays = [int]$rule.RetentionDays
-                $includeSubfolders = [bool]$rule.IncludeSubfolders
-                $excludeFolders = @()
+        if ($config.Housekeeping.PathRules.PathRule) {
+            foreach ($rule in $config.Housekeeping.PathRules.PathRule) {
+                if ($rule.Enabled -eq 'True') {
+                    $path = $rule.Path
+                    $retentionDays = [int]$rule.RetentionDays
+                    $includeSubfolders = [bool]$rule.IncludeSubfolders
+                    $excludeFolders = @()
 
-                if ($rule.ExcludeFolders.ExcludeFolder) {
-                    $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText.Trim() }
+                    if ($rule.ExcludeFolders.ExcludeFolder) {
+                        $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText.Trim() }
+                    }
+
+                    $enableArchive = [bool]$rule.Archive.Enabled
+                    $archivePath = $rule.Archive.Path
+
+                    Log-Message -message "Applying rule: Path=$path, RetentionDays=$retentionDays, IncludeSubfolders=$includeSubfolders, ExcludeFolders=$($excludeFolders -join ', '), EnableArchive=$enableArchive, ArchivePath=$archivePath" -LogFile $logFilePath
+
+                    # Clean folder based on rule
+                    Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath
                 }
-
-                $enableArchive = [bool]$rule.Archive.Enabled
-                $archivePath = $rule.Archive.Path
-
-                Log-Message -message "Applying rule: Path=$path, RetentionDays=$retentionDays, IncludeSubfolders=$includeSubfolders, ExcludeFolders=$($excludeFolders -join ', '), EnableArchive=$enableArchive, ArchivePath=$archivePath" -LogFile $logFilePath
-
-                # Clean folder based on rule
-                Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath
             }
         }
 
