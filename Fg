@@ -16,13 +16,14 @@ function Get-Config {
 
     try {
         [xml]$xml = Get-Content $xmlPath
+        Log-Message -message "Loaded XML configuration: $($xml.OuterXml)" -LogFile $LogFile
         return $xml.Housekeeping
     } catch {
         throw "Failed to read or parse the XML file: $_"
     }
 }
 
-# Function to log messages
+# Function to log messages with debug level
 function Log-Message {
     param (
         [string]$message,
@@ -40,6 +41,7 @@ function Archive-File {
         [string]$archivePath
     )
     try {
+        Log-Message -message "Attempting to archive file: $filePath to $archivePath" -LogFile $LogFile
         $archiveDir = Join-Path -Path $archivePath -ChildPath (Split-Path -Leaf $filePath)
         if (-not (Test-Path $archiveDir)) {
             New-Item -ItemType Directory -Path $archiveDir -Force
@@ -63,8 +65,11 @@ function Clean-Folder {
     )
 
     try {
+        Log-Message -message "Cleaning folder: $Path with retention of $RetentionDays days" -LogFile $LogFile
         $currentDate = Get-Date
         $targetDate = $currentDate.AddDays(-$RetentionDays)
+
+        Log-Message -message "Target date for deletion: $targetDate" -LogFile $LogFile
 
         $filesToDelete = Get-ChildItem -Path $Path -File -Recurse:$IncludeSubfolders |
                          Where-Object { $_.LastWriteTime -lt $targetDate } |
@@ -78,6 +83,8 @@ function Clean-Folder {
                              }
                              return $include
                          }
+
+        Log-Message -message "Files to delete: $($filesToDelete.Count)" -LogFile $LogFile
 
         foreach ($file in $filesToDelete) {
             if ($DryRun) {
@@ -109,6 +116,8 @@ function Clean-MemoryDumps {
                 $retentionDays = [int]$rule.RetentionDays
                 $includeSubfolders = [bool]$rule.IncludeSubfolders
 
+                Log-Message -message "Cleaning memory dumps in: $path with retention of $retentionDays days" -LogFile $LogFile
+
                 if (-not (Test-Path $path)) {
                     Log-Message -message "Memory dump folder not found: $path" -LogFile $LogFile
                     continue
@@ -117,8 +126,12 @@ function Clean-MemoryDumps {
                 $currentDate = Get-Date
                 $targetDate = $currentDate.AddDays(-$retentionDays)
 
+                Log-Message -message "Target date for memory dumps: $targetDate" -LogFile $LogFile
+
                 $dumpsToDelete = Get-ChildItem -Path $path -File -Recurse:$includeSubfolders |
                                  Where-Object { $_.LastWriteTime -lt $targetDate }
+
+                Log-Message -message "Memory dumps to delete: $($dumpsToDelete.Count)" -LogFile $LogFile
 
                 foreach ($dump in $dumpsToDelete) {
                     if ($DryRun) {
@@ -143,6 +156,8 @@ function Apply-Housekeeping {
     
     try {
         $logFilePath = if ($config.LogFile.Path) { $config.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
+        Log-Message -message "Applying housekeeping rules from config: $($config.OuterXml)" -LogFile $LogFile
+        
         foreach ($rule in $config.PathRule) {
             if ($rule.Enabled -eq 'True') {
                 $path = $rule.Path
@@ -156,6 +171,8 @@ function Apply-Housekeeping {
 
                 $enableArchive = [bool]$rule.Archive.Enabled
                 $archivePath = $rule.Archive.Path
+
+                Log-Message -message "Applying rule: Path=$path, RetentionDays=$retentionDays, IncludeSubfolders=$includeSubfolders, ExcludeFolders=$($excludeFolders -join ', '), EnableArchive=$enableArchive, ArchivePath=$archivePath" -LogFile $LogFile
 
                 # Clean folder based on rule
                 Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath
@@ -177,6 +194,8 @@ while ($true) {
         $DryRun = [bool]$config.DryRun
         $SleepIntervalHours = [int]$config.SleepIntervalHours
 
+        Log-Message -message "Configuration loaded. LogFile=$LogFile, DryRun=$DryRun, SleepIntervalHours=$SleepIntervalHours" -LogFile $LogFile
+
         # Start the housekeeping process
         Log-Message -message "Starting housekeeping process" -LogFile $LogFile
 
@@ -192,5 +211,6 @@ while ($true) {
     }
 
     # Sleep for the specified interval before the next run
+    Log-Message -message "Sleeping for $($SleepIntervalHours) hours" -LogFile $LogFile
     Start-Sleep -Seconds ($SleepIntervalHours * 3600)
 }
