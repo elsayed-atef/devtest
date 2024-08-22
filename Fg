@@ -44,7 +44,7 @@ function Apply-Housekeeping {
 
         foreach ($rule in $config.Housekeeping.PathRules.PathRule) {
             Log-Message -message "Processing rule for path: $($rule.Path)" -LogFile $logFilePath
-            
+
             # Handle ExcludeFolders
             $excludeFolders = @()
             if ($rule.ExcludeFolders -and $rule.ExcludeFolders.ExcludeFolder) {
@@ -52,7 +52,12 @@ function Apply-Housekeeping {
                     $excludeFolders += $folder
                 }
             }
-            Log-Message -message "Exclude Folders: $($excludeFolders -join ', ')" -LogFile $logFilePath
+
+            if ($excludeFolders.Count -gt 0) {
+                Log-Message -message "Exclude Folders: $($excludeFolders -join ', ')" -LogFile $logFilePath
+            } else {
+                Log-Message -message "Exclude Folders: None" -LogFile $logFilePath
+            }
 
             # Continue with the rest of the housekeeping logic
             Log-Message -message "Rule Details: $(($rule | Out-String).Trim())" -LogFile $logFilePath
