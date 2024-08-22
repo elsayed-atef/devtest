@@ -61,6 +61,14 @@ function Apply-Housekeeping {
                 Log-Message -message "Exclude Folders: None" -LogFile $logFilePath
             }
 
+            # Handle Archive
+            $archivePath = $rule.Archive
+            if ($archivePath -and $archivePath -ne "") {
+                Log-Message -message "Archive Path: $archivePath" -LogFile $logFilePath
+            } else {
+                Log-Message -message "Archive: None" -LogFile $logFilePath
+            }
+
             # Log the rule details
             Log-Message -message "Rule Details: $(($rule | Out-String).Trim())" -LogFile $logFilePath
 
