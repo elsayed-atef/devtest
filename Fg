@@ -169,23 +169,27 @@ function Apply-Housekeeping {
 
         if ($config.Housekeeping.PathRules -and $config.Housekeeping.PathRules.PathRule) {
             foreach ($rule in $config.Housekeeping.PathRules.PathRule) {
-                if ($rule.Enabled -eq 'True') {
-                    $path = $rule.Path
-                    $retentionDays = [int]$rule.RetentionDays
-                    $includeSubfolders = [bool]$rule.IncludeSubfolders
-                    $excludeFolders = @()
+                try {
+                    if ($rule.Enabled -eq 'True') {
+                        $path = $rule.Path
+                        $retentionDays = [int]$rule.RetentionDays
+                        $includeSubfolders = [bool]$rule.IncludeSubfolders
+                        $excludeFolders = @()
 
-                    if ($rule.ExcludeFolders -and $rule.ExcludeFolders.ExcludeFolder) {
-                        $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText.Trim() }
+                        if ($rule.ExcludeFolders -and $rule.ExcludeFolders.ExcludeFolder) {
+                            $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText.Trim() }
+                        }
+
+                        $enableArchive = [bool]$rule.Archive.Enabled
+                        $archivePath = $rule.Archive.Path
+
+                        Log-Message -message "Applying rule: Path=$path, RetentionDays=$retentionDays, IncludeSubfolders=$includeSubfolders, ExcludeFolders=$($excludeFolders -join ', '), EnableArchive=$enableArchive, ArchivePath=$archivePath" -LogFile $logFilePath
+
+                        # Clean folder based on rule
+                        Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath
                     }
-
-                    $enableArchive = [bool]$rule.Archive.Enabled
-                    $archivePath = $rule.Archive.Path
-
-                    Log-Message -message "Applying rule: Path=$path, RetentionDays=$retentionDays, IncludeSubfolders=$includeSubfolders, ExcludeFolders=$($excludeFolders -join ', '), EnableArchive=$enableArchive, ArchivePath=$archivePath" -LogFile $logFilePath
-
-                    # Clean folder based on rule
-                    Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath
+                } catch {
+                    Log-Message -message "Error processing path rule: $_" -LogFile $logFilePath
                 }
             }
         }
