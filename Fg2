@@ -1,51 +1,39 @@
 <Housekeeping>
-    <ConfigFile>C:\housekeeping_config.xml</ConfigFile>
-    <DryRun>false</DryRun>
-    <SleepIntervalHours>5</SleepIntervalHours>
-    
     <LogFile>
         <Path>D:\data\temp\housekeeping_log.txt</Path>
     </LogFile>
+    <DryRun>false</DryRun>
+    <SleepIntervalHours>5</SleepIntervalHours>
     
+    <!-- Path Rules -->
     <PathRule>
-        <Path>C:\temp\logs</Path>
         <Enabled>True</Enabled>
-        <RetentionDays>5</RetentionDays>
-        <IncludeSubfolders>True</IncludeSubfolders>
-        <Archive>
-            <Enabled>True</Enabled>
-            <Path>C:\archive</Path>
-        </Archive>
+        <Path>C:\temp\logs</Path>
+        <RetentionDays>7</RetentionDays>
+        <IncludeSubfolders>true</IncludeSubfolders>
         <ExcludeFolders>
             <ExcludeFolder>C:\temp\logs\exclude1</ExcludeFolder>
             <ExcludeFolder>C:\temp\logs\exclude2</ExcludeFolder>
         </ExcludeFolders>
-    </PathRule>
-    
-    <PathRule>
-        <Path>C:\temp\logs\keep</Path>
-        <Enabled>True</Enabled>
-        <RetentionDays>8</RetentionDays>
-        <IncludeSubfolders>False</IncludeSubfolders>
         <Archive>
-            <Enabled>False</Enabled>
-            <Path>C:\archive</Path>
+            <Enabled>True</Enabled>
+            <Path>D:\archive\logs</Path>
         </Archive>
-        <ExcludeFolders />
     </PathRule>
     
+    <!-- Memory Dump Rules -->
     <MemoryDumpRules>
         <MemoryDumpRule>
-            <Path>C:\Windows\Minidump</Path>
             <Enabled>True</Enabled>
-            <RetentionDays>7</RetentionDays>
-            <IncludeSubfolders>True</IncludeSubfolders>
+            <Path>C:\Windows\MemoryDumps</Path>
+            <RetentionDays>14</RetentionDays>
+            <IncludeSubfolders>true</IncludeSubfolders>
         </MemoryDumpRule>
         <MemoryDumpRule>
-            <Path>D:\ServerDumps</Path>
-            <Enabled>True</Enabled>
-            <RetentionDays>14</RetentionDays>
-            <IncludeSubfolders>False</IncludeSubfolders>
+            <Enabled>False</Enabled>
+            <Path>C:\AnotherDumpFolder</Path>
+            <RetentionDays>30</RetentionDays>
+            <IncludeSubfolders>false</IncludeSubfolders>
         </MemoryDumpRule>
     </MemoryDumpRules>
 </Housekeeping>
