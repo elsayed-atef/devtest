@@ -4,7 +4,7 @@ param (
     [bool]$DryRun = $false
 )
 
-# Function to load configuration from XML
+# Function to load and parse XML configuration
 function Get-Config {
     param (
         [string]$xmlPath
@@ -17,7 +17,7 @@ function Get-Config {
     try {
         [xml]$xml = Get-Content $xmlPath
         Log-Message -message "Loaded XML configuration: $($xml.OuterXml)" -LogFile $LogFile
-        return $xml.Housekeeping
+        return $xml
     } catch {
         throw "Failed to read or parse the XML file: $_"
     }
@@ -155,10 +155,10 @@ function Apply-Housekeeping {
     )
 
     try {
-        $logFilePath = if ($config.LogFile.Path) { $config.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
+        $logFilePath = if ($config.Housekeeping.LogFile.Path) { $config.Housekeeping.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
         Log-Message -message "Applying housekeeping rules from config: $($config.OuterXml)" -LogFile $LogFile
-        
-        foreach ($rule in $config.PathRule) {
+
+        foreach ($rule in $config.Housekeeping.PathRule) {
             if ($rule.Enabled -eq 'True') {
                 $path = $rule.Path
                 $retentionDays = [int]$rule.RetentionDays
@@ -190,9 +190,9 @@ while ($true) {
         $config = Get-Config -xmlPath $ConfigFile
 
         # Set parameters from config
-        $LogFile = if ($config.LogFile.Path) { $config.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
-        $DryRun = [bool]$config.DryRun
-        $SleepIntervalHours = [int]$config.SleepIntervalHours
+        $LogFile = if ($config.Housekeeping.LogFile.Path) { $config.Housekeeping.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
+        $DryRun = [bool]$config.Housekeeping.DryRun
+        $SleepIntervalHours = [int]$config.Housekeeping.SleepIntervalHours
 
         Log-Message -message "Configuration loaded. LogFile=$LogFile, DryRun=$DryRun, SleepIntervalHours=$SleepIntervalHours" -LogFile $LogFile
 
@@ -201,8 +201,8 @@ while ($true) {
 
         Apply-Housekeeping -config $config
 
-        if ($config.MemoryDumpRules) {
-            Clean-MemoryDumps -memoryDumpRules $config.MemoryDumpRules
+        if ($config.Housekeeping.MemoryDumpRules) {
+            Clean-MemoryDumps -memoryDumpRules $config.Housekeeping.MemoryDumpRules
         }
 
         Log-Message -message "Housekeeping process completed" -LogFile $LogFile
