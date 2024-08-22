@@ -67,13 +67,15 @@ function Clean-Folder {
 
         $filesToDelete = Get-ChildItem -Path $Path -File -Recurse:$IncludeSubfolders |
                          Where-Object { $_.LastWriteTime -lt $targetDate } |
-                         Where-Object { 
+                         Where-Object {
+                             $include = $true
                              foreach ($exclude in $ExcludeFolders) {
-                                 if ($_.FullName -like "$exclude*") { 
-                                     return $false 
+                                 if ($_.FullName -like "$exclude*") {
+                                     $include = $false
+                                     break
                                  }
                              }
-                             return $true
+                             return $include
                          }
 
         foreach ($file in $filesToDelete) {
