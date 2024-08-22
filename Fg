@@ -45,9 +45,9 @@ function Archive-File {
             New-Item -ItemType Directory -Path $archiveDir -Force
         }
         Move-Item -Path $filePath -Destination $archiveDir -Force
-        Log-Message "Archived file: $filePath to $archiveDir" -LogFile $LogFile
+        Log-Message -message "Archived file: $filePath to $archiveDir" -LogFile $LogFile
     } catch {
-        Log-Message "Failed to archive file $filePath: $_" -LogFile $LogFile
+        Log-Message -message "Failed to archive file $filePath: $_" -LogFile $LogFile
     }
 }
 
@@ -71,7 +71,7 @@ function Clean-Folder {
                          Where-Object {
                              $include = $true
                              foreach ($exclude in $ExcludeFolders) {
-                                 if ($_.FullName -like "$exclude*") {
+                                 if ($_.FullName -like "${exclude}*") {
                                      $include = $false
                                      break
                                  }
@@ -81,18 +81,18 @@ function Clean-Folder {
 
         foreach ($file in $filesToDelete) {
             if ($DryRun) {
-                Log-Message "Dry Run: Would delete file: $($file.FullName)" -LogFile $LogFile
+                Log-Message -message "Dry Run: Would delete file: $($file.FullName)" -LogFile $LogFile
             } else {
                 if ($EnableArchive) {
                     Archive-File -filePath $file.FullName -archivePath $ArchivePath
                 } else {
                     Remove-Item -Path $file.FullName -Force
-                    Log-Message "Deleted file: $($file.FullName)" -LogFile $LogFile
+                    Log-Message -message "Deleted file: $($file.FullName)" -LogFile $LogFile
                 }
             }
         }
     } catch {
-        Log-Message "Error cleaning folder $Path: $_" -LogFile $LogFile
+        Log-Message -message "Error cleaning folder $Path: $_" -LogFile $LogFile
     }
 }
 
@@ -110,7 +110,7 @@ function Clean-MemoryDumps {
                 $includeSubfolders = [bool]$rule.IncludeSubfolders
 
                 if (-not (Test-Path $path)) {
-                    Log-Message "Memory dump folder not found: $path" -LogFile $LogFile
+                    Log-Message -message "Memory dump folder not found: $path" -LogFile $LogFile
                     continue
                 }
 
@@ -122,16 +122,16 @@ function Clean-MemoryDumps {
 
                 foreach ($dump in $dumpsToDelete) {
                     if ($DryRun) {
-                        Log-Message "Dry Run: Would delete memory dump: $($dump.FullName)" -LogFile $LogFile
+                        Log-Message -message "Dry Run: Would delete memory dump: $($dump.FullName)" -LogFile $LogFile
                     } else {
                         Remove-Item -Path $dump.FullName -Force
-                        Log-Message "Deleted memory dump: $($dump.FullName)" -LogFile $LogFile
+                        Log-Message -message "Deleted memory dump: $($dump.FullName)" -LogFile $LogFile
                     }
                 }
             }
         }
     } catch {
-        Log-Message "Error cleaning memory dumps: $_" -LogFile $LogFile
+        Log-Message -message "Error cleaning memory dumps: $_" -LogFile $LogFile
     }
 }
 
@@ -162,7 +162,7 @@ function Apply-Housekeeping {
             }
         }
     } catch {
-        Log-Message "Error applying housekeeping rules: $_" -LogFile $LogFile
+        Log-Message -message "Error applying housekeeping rules: $_" -LogFile $LogFile
     }
 }
 
@@ -178,7 +178,7 @@ while ($true) {
         $SleepIntervalHours = [int]$config.SleepIntervalHours
 
         # Start the housekeeping process
-        Log-Message "Starting housekeeping process" -LogFile $LogFile
+        Log-Message -message "Starting housekeeping process" -LogFile $LogFile
 
         Apply-Housekeeping -config $config
 
@@ -186,9 +186,9 @@ while ($true) {
             Clean-MemoryDumps -memoryDumpRules $config.MemoryDumpRules
         }
 
-        Log-Message "Housekeeping process completed" -LogFile $LogFile
+        Log-Message -message "Housekeeping process completed" -LogFile $LogFile
     } catch {
-        Log-Message "Error occurred: $_" -LogFile $LogFile
+        Log-Message -message "Error occurred: $_" -LogFile $LogFile
     }
 
     # Sleep for the specified interval before the next run
