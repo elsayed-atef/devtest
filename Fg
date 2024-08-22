@@ -142,7 +142,7 @@ function Apply-Housekeeping {
     )
     
     try {
-        $logFilePath = $config.LogFile.Path
+        $logFilePath = if ($config.LogFile.Path) { $config.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
         foreach ($rule in $config.PathRule) {
             if ($rule.Enabled -eq 'True') {
                 $path = $rule.Path
