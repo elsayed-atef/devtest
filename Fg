@@ -110,42 +110,46 @@ function Clean-MemoryDumps {
     )
 
     try {
-        if ($memoryDumpRules -eq $null -or $memoryDumpRules.MemoryDumpRule -eq $null) {
-            Log-Message -message "No memory dump rules found or memory dump rules section is missing." -LogFile $LogFile
+        if (-not $memoryDumpRules) {
+            Log-Message -message "No memory dump rules provided." -LogFile $LogFile
             return
         }
 
         foreach ($rule in $memoryDumpRules.MemoryDumpRule) {
-            if ($rule.Enabled -eq 'True') {
-                $path = $rule.Path
-                $retentionDays = [int]$rule.RetentionDays
-                $includeSubfolders = [bool]$rule.IncludeSubfolders
+            try {
+                if ($rule.Enabled -eq 'True') {
+                    $path = $rule.Path
+                    $retentionDays = [int]$rule.RetentionDays
+                    $includeSubfolders = [bool]$rule.IncludeSubfolders
 
-                Log-Message -message "Cleaning memory dumps in: $path with retention of $retentionDays days" -LogFile $LogFile
+                    Log-Message -message "Cleaning memory dumps in: $path with retention of $retentionDays days" -LogFile $LogFile
 
-                if (-not (Test-Path $path)) {
-                    Log-Message -message "Memory dump folder not found: $path" -LogFile $LogFile
-                    continue
-                }
+                    if (-not (Test-Path $path)) {
+                        Log-Message -message "Memory dump folder not found: $path" -LogFile $LogFile
+                        continue
+                    }
 
-                $currentDate = Get-Date
-                $targetDate = $currentDate.AddDays(-$retentionDays)
+                    $currentDate = Get-Date
+                    $targetDate = $currentDate.AddDays(-$retentionDays)
 
-                Log-Message -message "Target date for memory dumps: $targetDate" -LogFile $LogFile
+                    Log-Message -message "Target date for memory dumps: $targetDate" -LogFile $LogFile
 
-                $dumpsToDelete = Get-ChildItem -Path $path -File -Recurse:$includeSubfolders |
-                                 Where-Object { $_.LastWriteTime -lt $targetDate }
+                    $dumpsToDelete = Get-ChildItem -Path $path -File -Recurse:$includeSubfolders |
+                                     Where-Object { $_.LastWriteTime -lt $targetDate }
 
-                Log-Message -message "Memory dumps to delete: $($dumpsToDelete.Count)" -LogFile $LogFile
+                    Log-Message -message "Memory dumps to delete: $($dumpsToDelete.Count)" -LogFile $LogFile
 
-                foreach ($dump in $dumpsToDelete) {
-                    if ($DryRun) {
-                        Log-Message -message "Dry Run: Would delete memory dump: $($dump.FullName)" -LogFile $LogFile
-                    } else {
-                        Remove-Item -Path $dump.FullName -Force
-                        Log-Message -message "Deleted memory dump: $($dump.FullName)" -LogFile $LogFile
+                    foreach ($dump in $dumpsToDelete) {
+                        if ($DryRun) {
+                            Log-Message -message "Dry Run: Would delete memory dump: $($dump.FullName)" -LogFile $LogFile
+                        } else {
+                            Remove-Item -Path $dump.FullName -Force
+                            Log-Message -message "Deleted memory dump: $($dump.FullName)" -LogFile $LogFile
+                        }
                     }
                 }
+            } catch {
+                Log-Message -message "Error processing memory dump rule: $_" -LogFile $LogFile
             }
         }
     } catch {
@@ -192,6 +196,8 @@ function Apply-Housekeeping {
                     Log-Message -message "Error processing path rule: $_" -LogFile $logFilePath
                 }
             }
+        } else {
+            Log-Message -message "No path rules found in configuration." -LogFile $logFilePath
         }
 
         # Clean memory dumps
