@@ -2,8 +2,6 @@
   <LogFile>
     <Path>D:\data\temp\housekeeping_log.txt</Path>
   </LogFile>
-  <DryRun>false</DryRun>
-  <SleepIntervalHours>5</SleepIntervalHours>
   <PathRules>
     <PathRule>
       <Path>C:\temp\logs</Path>
@@ -16,19 +14,6 @@
       <Archive>
         <Enabled>true</Enabled>
         <Path>D:\data\archive</Path>
-      </Archive>
-      <Enabled>true</Enabled>
-    </PathRule>
-    <PathRule>
-      <Path>C:\temp\other</Path>
-      <RetentionDays>10</RetentionDays>
-      <IncludeSubfolders>false</IncludeSubfolders>
-      <ExcludeFolders>
-        <ExcludeFolder>C:\temp\other\exclude3</ExcludeFolder>
-      </ExcludeFolders>
-      <Archive>
-        <Enabled>false</Enabled>
-        <Path></Path>
       </Archive>
       <Enabled>true</Enabled>
     </PathRule>
