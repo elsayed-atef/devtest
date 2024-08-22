@@ -1,37 +1,3 @@
-[CmdletBinding()]
-param (
-    [string]$ConfigFile = "C:\housekeeping_config.xml"
-)
-
-# Function to load and parse XML configuration
-function Get-Config {
-    param (
-        [string]$xmlPath
-    )
-
-    if (-not (Test-Path $xmlPath)) {
-        throw "Configuration file not found: $xmlPath"
-    }
-
-    try {
-        [xml]$xml = [xml](Get-Content $xmlPath)
-        return $xml
-    } catch {
-        throw "Failed to read or parse the XML file: $_"
-    }
-}
-
-# Function to log messages
-function Log-Message {
-    param (
-        [string]$message,
-        [string]$LogFile = "D:\data\temp\housekeeping_log.txt"
-    )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp - $message"
-    Add-Content -Path $LogFile -Value $logEntry
-}
-
 # Function to apply housekeeping rules
 function Apply-Housekeeping {
     param (
@@ -49,7 +15,9 @@ function Apply-Housekeeping {
             $excludeFolders = @()
             if ($rule.ExcludeFolders -and $rule.ExcludeFolders.ExcludeFolder) {
                 foreach ($folder in $rule.ExcludeFolders.ExcludeFolder) {
-                    $excludeFolders += $folder
+                    if ($folder -and $folder -ne "") {
+                        $excludeFolders += $folder
+                    }
                 }
             }
 
@@ -65,19 +33,10 @@ function Apply-Housekeeping {
 
         foreach ($memoryDumpRule in $config.Housekeeping.MemoryDumpRules.MemoryDumpRule) {
             Log-Message -message "Processing memory dump rule for path: $($memoryDumpRule.Path)" -LogFile $logFilePath
-            # Log the entire memory dump rule to help with debugging
             Log-Message -message "Memory Dump Rule Details: $(($memoryDumpRule | Out-String).Trim())" -LogFile $logFilePath
         }
 
     } catch {
         Log-Message -message "Error applying housekeeping rules: $_" -LogFile $logFilePath
     }
-}
-
-# Main script execution
-try {
-    $xmlConfig = Get-Config -xmlPath $ConfigFile
-    Apply-Housekeeping -config $xmlConfig
-} catch {
-    Log-Message -message "Script error: $_" -LogFile "D:\data\temp\housekeeping_log.txt"
 }
