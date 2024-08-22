@@ -8,6 +8,11 @@ function Get-Config {
     param (
         [string]$xmlPath
     )
+    
+    if (-not (Test-Path $xmlPath)) {
+        throw "Configuration file not found: $xmlPath"
+    }
+    
     [xml]$xml = Get-Content $xmlPath
     return $xml.Housekeeping
 }
@@ -140,24 +145,28 @@ function Apply-Housekeeping {
 
 # Main loop
 while ($true) {
-    # Load configuration
-    $config = Get-Config -xmlPath $ConfigFile
+    try {
+        # Load configuration
+        $config = Get-Config -xmlPath $ConfigFile
 
-    # Set parameters from config
-    $LogFile = if ($config.LogFile.Path) { $config.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
-    $DryRun = [bool]$config.DryRun
-    $SleepIntervalHours = [int]$config.SleepIntervalHours
+        # Set parameters from config
+        $LogFile = if ($config.LogFile.Path) { $config.LogFile.Path } else { "D:\data\temp\housekeeping_log.txt" }
+        $DryRun = [bool]$config.DryRun
+        $SleepIntervalHours = [int]$config.SleepIntervalHours
 
-    # Start the housekeeping process
-    Log-Message "Starting housekeeping process" -LogFile $LogFile
+        # Start the housekeeping process
+        Log-Message "Starting housekeeping process" -LogFile $LogFile
 
-    Apply-Housekeeping -config $config
+        Apply-Housekeeping -config $config
 
-    if ($config.MemoryDumpRules) {
-        Clean-MemoryDumps -memoryDumpRules $config.MemoryDumpRules
+        if ($config.MemoryDumpRules) {
+            Clean-MemoryDumps -memoryDumpRules $config.MemoryDumpRules
+        }
+
+        Log-Message "Housekeeping process completed" -LogFile $LogFile
+    } catch {
+        Log-Message "Error occurred: $_" -LogFile $LogFile
     }
-
-    Log-Message "Housekeeping process completed" -LogFile $LogFile
 
     # Sleep for the specified interval before the next run
     Start-Sleep -Seconds ($SleepIntervalHours * 3600)
