@@ -8,13 +8,17 @@ function Get-Config {
     param (
         [string]$xmlPath
     )
-    
+
     if (-not (Test-Path $xmlPath)) {
         throw "Configuration file not found: $xmlPath"
     }
-    
-    [xml]$xml = Get-Content $xmlPath
-    return $xml.Housekeeping
+
+    try {
+        [xml]$xml = Get-Content $xmlPath
+        return $xml.Housekeeping
+    } catch {
+        throw "Failed to read or parse the XML file: $_"
+    }
 }
 
 # Function to log messages
@@ -34,12 +38,16 @@ function Archive-File {
         [string]$filePath,
         [string]$archivePath
     )
-    $archiveDir = Join-Path -Path $archivePath -ChildPath (Split-Path -Leaf $filePath)
-    if (-not (Test-Path $archiveDir)) {
-        New-Item -ItemType Directory -Path $archiveDir -Force
+    try {
+        $archiveDir = Join-Path -Path $archivePath -ChildPath (Split-Path -Leaf $filePath)
+        if (-not (Test-Path $archiveDir)) {
+            New-Item -ItemType Directory -Path $archiveDir -Force
+        }
+        Move-Item -Path $filePath -Destination $archiveDir -Force
+        Log-Message "Archived file: $filePath to $archiveDir" -LogFile $LogFile
+    } catch {
+        Log-Message "Failed to archive file $filePath: $_" -LogFile $LogFile
     }
-    Move-Item -Path $filePath -Destination $archiveDir -Force
-    Log-Message "Archived file: $filePath to $archiveDir" -LogFile $LogFile
 }
 
 # Function to clean folders
@@ -53,31 +61,35 @@ function Clean-Folder {
         [string]$ArchivePath
     )
 
-    $currentDate = Get-Date
-    $targetDate = $currentDate.AddDays(-$RetentionDays)
-    
-    $filesToDelete = Get-ChildItem -Path $Path -File -Recurse:$IncludeSubfolders | 
-                     Where-Object { $_.LastWriteTime -lt $targetDate } |
-                     Where-Object { 
-                         foreach ($exclude in $ExcludeFolders) {
-                             if ($_.FullName -like "$exclude*") { 
-                                 return $false 
-                             }
-                         }
-                         return $true
-                     }
+    try {
+        $currentDate = Get-Date
+        $targetDate = $currentDate.AddDays(-$RetentionDays)
 
-    foreach ($file in $filesToDelete) {
-        if ($DryRun) {
-            Log-Message "Dry Run: Would delete file: $($file.FullName)" -LogFile $LogFile
-        } else {
-            if ($EnableArchive) {
-                Archive-File -filePath $file.FullName -archivePath $ArchivePath
+        $filesToDelete = Get-ChildItem -Path $Path -File -Recurse:$IncludeSubfolders |
+                         Where-Object { $_.LastWriteTime -lt $targetDate } |
+                         Where-Object { 
+                             foreach ($exclude in $ExcludeFolders) {
+                                 if ($_.FullName -like "$exclude*") { 
+                                     return $false 
+                                 }
+                             }
+                             return $true
+                         }
+
+        foreach ($file in $filesToDelete) {
+            if ($DryRun) {
+                Log-Message "Dry Run: Would delete file: $($file.FullName)" -LogFile $LogFile
             } else {
-                Remove-Item -Path $file.FullName -Force
-                Log-Message "Deleted file: $($file.FullName)" -LogFile $LogFile
+                if ($EnableArchive) {
+                    Archive-File -filePath $file.FullName -archivePath $ArchivePath
+                } else {
+                    Remove-Item -Path $file.FullName -Force
+                    Log-Message "Deleted file: $($file.FullName)" -LogFile $LogFile
+                }
             }
         }
+    } catch {
+        Log-Message "Error cleaning folder $Path: $_" -LogFile $LogFile
     }
 }
 
@@ -87,32 +99,36 @@ function Clean-MemoryDumps {
         [xml]$memoryDumpRules
     )
 
-    foreach ($rule in $memoryDumpRules.MemoryDumpRule) {
-        if ($rule.Enabled -eq 'True') {
-            $path = $rule.Path
-            $retentionDays = [int]$rule.RetentionDays
-            $includeSubfolders = [bool]$rule.IncludeSubfolders
+    try {
+        foreach ($rule in $memoryDumpRules.MemoryDumpRule) {
+            if ($rule.Enabled -eq 'True') {
+                $path = $rule.Path
+                $retentionDays = [int]$rule.RetentionDays
+                $includeSubfolders = [bool]$rule.IncludeSubfolders
 
-            if (-not (Test-Path $path)) {
-                Log-Message "Memory dump folder not found: $path" -LogFile $LogFile
-                continue
-            }
+                if (-not (Test-Path $path)) {
+                    Log-Message "Memory dump folder not found: $path" -LogFile $LogFile
+                    continue
+                }
 
-            $currentDate = Get-Date
-            $targetDate = $currentDate.AddDays(-$retentionDays)
+                $currentDate = Get-Date
+                $targetDate = $currentDate.AddDays(-$retentionDays)
 
-            $dumpsToDelete = Get-ChildItem -Path $path -File -Recurse:$includeSubfolders |
-                             Where-Object { $_.LastWriteTime -lt $targetDate }
+                $dumpsToDelete = Get-ChildItem -Path $path -File -Recurse:$includeSubfolders |
+                                 Where-Object { $_.LastWriteTime -lt $targetDate }
 
-            foreach ($dump in $dumpsToDelete) {
-                if ($DryRun) {
-                    Log-Message "Dry Run: Would delete memory dump: $($dump.FullName)" -LogFile $LogFile
-                } else {
-                    Remove-Item -Path $dump.FullName -Force
-                    Log-Message "Deleted memory dump: $($dump.FullName)" -LogFile $LogFile
+                foreach ($dump in $dumpsToDelete) {
+                    if ($DryRun) {
+                        Log-Message "Dry Run: Would delete memory dump: $($dump.FullName)" -LogFile $LogFile
+                    } else {
+                        Remove-Item -Path $dump.FullName -Force
+                        Log-Message "Deleted memory dump: $($dump.FullName)" -LogFile $LogFile
+                    }
                 }
             }
         }
+    } catch {
+        Log-Message "Error cleaning memory dumps: $_" -LogFile $LogFile
     }
 }
 
@@ -122,24 +138,28 @@ function Apply-Housekeeping {
         [xml]$config
     )
     
-    $logFilePath = $config.LogFile.Path
-    foreach ($rule in $config.PathRule) {
-        if ($rule.Enabled -eq 'True') {
-            $path = $rule.Path
-            $retentionDays = [int]$rule.RetentionDays
-            $includeSubfolders = [bool]$rule.IncludeSubfolders
-            $excludeFolders = @()
-            
-            if ($rule.ExcludeFolders.ExcludeFolder) {
-                $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText }
+    try {
+        $logFilePath = $config.LogFile.Path
+        foreach ($rule in $config.PathRule) {
+            if ($rule.Enabled -eq 'True') {
+                $path = $rule.Path
+                $retentionDays = [int]$rule.RetentionDays
+                $includeSubfolders = [bool]$rule.IncludeSubfolders
+                $excludeFolders = @()
+
+                if ($rule.ExcludeFolders.ExcludeFolder) {
+                    $excludeFolders = $rule.ExcludeFolders.ExcludeFolder | ForEach-Object { $_.InnerText }
+                }
+
+                $enableArchive = [bool]$rule.Archive.Enabled
+                $archivePath = $rule.Archive.Path
+
+                # Always clean folder, no disk space check
+                Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath
             }
-
-            $enableArchive = [bool]$rule.Archive.Enabled
-            $archivePath = $rule.Archive.Path
-
-            # Always clean folder, no disk space check
-            Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath
         }
+    } catch {
+        Log-Message "Error applying housekeeping rules: $_" -LogFile $LogFile
     }
 }
 
