@@ -1,37 +1,44 @@
 <Housekeeping>
-    <LogFile>
-        <Path>D:\data\temp\housekeeping_log.txt</Path>
-    </LogFile>
-    <DryRun>false</DryRun>
-    <SleepIntervalHours>5</SleepIntervalHours>
-    
-    <!-- Path Rules -->
-    <PathRules>
-        <PathRule>
-            <Enabled>True</Enabled>
-            <Path>C:\temp\logs</Path>
-            <RetentionDays>7</RetentionDays>
-            <IncludeSubfolders>true</IncludeSubfolders>
-            <ExcludeFolders>
-                <ExcludeFolder>C:\temp\logs\exclude1</ExcludeFolder>
-                <ExcludeFolder>C:\temp\logs\exclude2</ExcludeFolder>
-            </ExcludeFolders>
-            <Archive>
-                <Enabled>True</Enabled>
-                <Path>D:\archive\logs</Path>
-            </Archive>
-        </PathRule>
-        <!-- Additional PathRule elements -->
-    </PathRules>
-
-    <!-- Memory Dump Rules -->
-    <MemoryDumpRules>
-        <MemoryDumpRule>
-            <Enabled>True</Enabled>
-            <Path>C:\Windows\MemoryDumps</Path>
-            <RetentionDays>14</RetentionDays>
-            <IncludeSubfolders>true</IncludeSubfolders>
-        </MemoryDumpRule>
-        <!-- Additional MemoryDumpRule elements -->
-    </MemoryDumpRules>
+  <LogFile>
+    <Path>D:\data\temp\housekeeping_log.txt</Path>
+  </LogFile>
+  <DryRun>false</DryRun>
+  <SleepIntervalHours>5</SleepIntervalHours>
+  <PathRules>
+    <PathRule>
+      <Path>C:\temp\logs</Path>
+      <RetentionDays>5</RetentionDays>
+      <IncludeSubfolders>true</IncludeSubfolders>
+      <ExcludeFolders>
+        <ExcludeFolder>C:\temp\logs\exclude1</ExcludeFolder>
+        <ExcludeFolder>C:\temp\logs\exclude2</ExcludeFolder>
+      </ExcludeFolders>
+      <Archive>
+        <Enabled>true</Enabled>
+        <Path>D:\data\archive</Path>
+      </Archive>
+      <Enabled>true</Enabled>
+    </PathRule>
+    <PathRule>
+      <Path>C:\temp\other</Path>
+      <RetentionDays>10</RetentionDays>
+      <IncludeSubfolders>false</IncludeSubfolders>
+      <ExcludeFolders>
+        <ExcludeFolder>C:\temp\other\exclude3</ExcludeFolder>
+      </ExcludeFolders>
+      <Archive>
+        <Enabled>false</Enabled>
+        <Path></Path>
+      </Archive>
+      <Enabled>true</Enabled>
+    </PathRule>
+  </PathRules>
+  <MemoryDumpRules>
+    <MemoryDumpRule>
+      <Path>C:\MemoryDumps</Path>
+      <RetentionDays>7</RetentionDays>
+      <IncludeSubfolders>true</IncludeSubfolders>
+      <Enabled>true</Enabled>
+    </MemoryDumpRule>
+  </MemoryDumpRules>
 </Housekeeping>
