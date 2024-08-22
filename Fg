@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param (
-    [string]$ConfigFile = "C:\housekeeping_config.xml"
+    [string]$ConfigFile = "C:\housekeeping_config.xml",
+    [bool]$DryRun = $false
 )
 
 # Function to load configuration from XML
@@ -156,7 +157,7 @@ function Apply-Housekeeping {
                 $enableArchive = [bool]$rule.Archive.Enabled
                 $archivePath = $rule.Archive.Path
 
-                # Always clean folder, no disk space check
+                # Clean folder based on rule
                 Clean-Folder -Path $path -RetentionDays $retentionDays -IncludeSubfolders $includeSubfolders -ExcludeFolders $excludeFolders -EnableArchive $enableArchive -ArchivePath $archivePath
             }
         }
