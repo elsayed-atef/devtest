@@ -1,11 +1,24 @@
 param (
     [string]$ConfigFile = "D:\data\housekeeping_config.xml",
     [switch]$Parallel,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [string]$LogFile = "D:\data\temp\housekeeping.log"
 )
 
 # Import the XML configuration
 $xmlConfig = [xml](Get-Content $ConfigFile)
+
+# Function to write to logfile
+function Write-Log {
+    param (
+        [string]$Message,
+        [string]$Level = "INFO"
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logMessage = "$timestamp [$Level] $Message"
+    Write-Host $logMessage
+    Add-Content -Path $LogFile -Value $logMessage
+}
 
 # Function to perform cleanup
 function Perform-Cleanup {
@@ -19,6 +32,8 @@ function Perform-Cleanup {
         [switch]$DryRun
     )
 
+    Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days."
+
     # Calculate retention date
     $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
 
@@ -28,44 +43,49 @@ function Perform-Cleanup {
 
     if ($ExcludePatterns) {
         foreach ($pattern in $ExcludePatterns) {
+            Write-Log "Excluding files matching pattern: $pattern" "DEBUG"
             $files = $files | Where-Object { $_.FullName -notmatch $pattern }
         }
     }
 
-    # DryRun mode
     if ($DryRun) {
-        Write-Host "DryRun: The following files would be processed:"
-        $files | ForEach-Object { Write-Host $_.FullName }
+        Write-Log "DryRun mode enabled. No files will be deleted or moved." "DEBUG"
+        Write-Log "Files that would be processed:"
+        $files | ForEach-Object { Write-Log $_.FullName "DEBUG" }
         return
     }
 
     # Archive files if required
     if ($ArchiveBeforeDelete -and $ArchivePath) {
+        Write-Log "Archiving files before deletion to $ArchivePath."
         foreach ($file in $files) {
             $dest = Join-Path -Path $ArchivePath -ChildPath $file.FullName.TrimStart($Path)
             $destDir = Split-Path $dest
             if (-not (Test-Path $destDir)) {
                 New-Item -Path $destDir -ItemType Directory | Out-Null
+                Write-Log "Created directory: $destDir" "DEBUG"
             }
             Move-Item -Path $file.FullName -Destination $dest
+            Write-Log "Moved $($file.FullName) to $dest" "DEBUG"
         }
     }
 
     # Report before deletion
     $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Host "Initial size: $([math]::round($initialSize, 2)) MB"
+    Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB"
 
     # Delete files
     $deletedCount = 0
     foreach ($file in $files) {
         Remove-Item -Path $file.FullName -Force
+        Write-Log "Deleted $($file.FullName)" "DEBUG"
         $deletedCount++
     }
 
     # Report after deletion
-    Write-Host "$deletedCount files deleted."
+    Write-Log "Deleted $deletedCount files."
     $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Host "Final size: $([math]::round($finalSize, 2)) MB"
+    Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB"
 }
 
 # Sort paths to ensure subfolders are processed before parent folders
@@ -82,6 +102,7 @@ foreach ($pathConfig in $sortedPaths) {
     $archivePath = $pathConfig.ArchivePath
 
     if ($enabled) {
+        Write-Log "Processing path: $path"
         if ($Parallel) {
             Start-Job -ScriptBlock {
                 Perform-Cleanup -Path $using:path -IncludeSubfolders $using:includeSubfolders `
@@ -108,7 +129,7 @@ $heapdumpPath = $heapdumpConfig.Path
 $heapdumpRetentionDays = [int]$heapdumpConfig.RetentionDays
 
 if ($heapdumpConfig.Enabled -eq "true") {
-    Write-Host "Performing heapdump cleanup..."
+    Write-Log "Performing heapdump cleanup for path: $heapdumpPath with retention period: $heapdumpRetentionDays days."
     Perform-Cleanup -Path $heapdumpPath -IncludeSubfolders $false `
                     -ExcludePatterns @() `
                     -RetentionDays $heapdumpRetentionDays `
@@ -122,4 +143,4 @@ if ($Parallel) {
     Get-Job | Wait-Job | Receive-Job | Remove-Job
 }
 
-Write-Host "Housekeeping completed."
+Write-Log "Housekeeping completed."
