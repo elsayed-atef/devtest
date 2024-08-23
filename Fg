@@ -142,7 +142,7 @@ foreach ($pathConfig in $sortedPaths) {
     }
 
     if ($Parallel) {
-        $job = Start-Job -ScriptBlock {
+        $scriptBlock = {
             param (
                 $Path,
                 $IncludeSubfolders,
@@ -250,8 +250,9 @@ foreach ($pathConfig in $sortedPaths) {
                             -ArchivePath $ArchivePath `
                             -DryRun $DryRun `
                             -LogFile $LogFile
-        } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
+        }
 
+        $job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
         $jobs += $job
     } else {
         Perform-Cleanup -Path $path -IncludeSubfolders $includeSubfolders `
