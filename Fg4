@@ -1,0 +1,98 @@
+param (
+    [string]$Path,
+    [bool]$IncludeSubfolders,
+    [string[]]$ExcludePatterns,
+    [int]$RetentionDays,
+    [bool]$ArchiveBeforeDelete,
+    [string]$ArchivePath,
+    [switch]$DryRun,
+    [string]$LogFile
+)
+
+function Write-Log {
+    param (
+        [string]$Message,
+        [string]$Level = "INFO",
+        [string]$LogFile
+    )
+
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logMessage = "$timestamp [$Level] $Message"
+
+    [System.Threading.Monitor]::Enter($global:logLock)
+    try {
+        Add-Content -Path $LogFile -Value $logMessage -ErrorAction Stop
+    } finally {
+        [System.Threading.Monitor]::Exit($global:logLock)
+    }
+}
+
+function Perform-Cleanup {
+    param (
+        [string]$Path,
+        [bool]$IncludeSubfolders,
+        [string[]]$ExcludePatterns,
+        [int]$RetentionDays,
+        [bool]$ArchiveBeforeDelete,
+        [string]$ArchivePath,
+        [switch]$DryRun,
+        [string]$LogFile
+    )
+
+    Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -Level "INFO" -LogFile $LogFile
+
+    $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
+    $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | 
+             Where-Object { $_.LastWriteTime -lt $RetentionDate }
+
+    if ($ExcludePatterns) {
+        foreach ($pattern in $ExcludePatterns) {
+            Write-Log "Excluding files matching pattern: $pattern" -Level "DEBUG" -LogFile $LogFile
+            $files = $files | Where-Object { $_.FullName -notmatch $pattern }
+        }
+    }
+
+    if ($DryRun) {
+        Write-Log "DryRun mode enabled. No files will be deleted or moved." -Level "DEBUG" -LogFile $LogFile
+        Write-Log "Files that would be processed:" -Level "DEBUG" -LogFile $LogFile
+        $files | ForEach-Object { Write-Log $_.FullName -Level "DEBUG" -LogFile $LogFile }
+        return
+    }
+
+    if ($ArchiveBeforeDelete -and $ArchivePath) {
+        Write-Log "Archiving files before deletion to $ArchivePath." -Level "INFO" -LogFile $LogFile
+        foreach ($file in $files) {
+            $dest = Join-Path -Path $ArchivePath -ChildPath $file.FullName.TrimStart($Path)
+            $destDir = Split-Path $dest
+            if (-not (Test-Path $destDir)) {
+                New-Item -Path $destDir -ItemType Directory | Out-Null
+                Write-Log "Created directory: $destDir" -Level "DEBUG" -LogFile $LogFile
+            }
+            Move-Item -Path $file.FullName -Destination $dest
+            Write-Log "Moved $($file.FullName) to $dest" -Level "DEBUG" -LogFile $LogFile
+        }
+    }
+
+    $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
+    Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -Level "INFO" -LogFile $LogFile
+
+    $deletedCount = 0
+    foreach ($file in $files) {
+        Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+        Write-Log "Deleted $($file.FullName)" -Level "DEBUG" -LogFile $LogFile
+        $deletedCount++
+    }
+
+    Write-Log "Deleted $deletedCount files." -Level "INFO" -LogFile $LogFile
+    $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
+    Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO" -LogFile $LogFile
+}
+
+# Execute the cleanup function
+Perform-Cleanup -Path $Path -IncludeSubfolders $IncludeSubfolders `
+                -ExcludePatterns $ExcludePatterns `
+                -RetentionDays $RetentionDays `
+                -ArchiveBeforeDelete $ArchiveBeforeDelete `
+                -ArchivePath $ArchivePath `
+                -DryRun $DryRun `
+                -LogFile $LogFile
