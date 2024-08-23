@@ -5,7 +5,10 @@ param (
     [string]$LogFile = "D:\data\temp\housekeeping.log"
 )
 
-# Define a function to handle log writing with file locking
+# Initialize a queue for log messages
+$logQueue = New-Object System.Collections.Concurrent.ConcurrentQueue[System.String]
+
+# Define a function to handle log writing
 function Write-Log {
     param (
         [string]$Message,
@@ -14,30 +17,37 @@ function Write-Log {
 
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logMessage = "$timestamp [$Level] $Message"
+    $logQueue.Enqueue($logMessage)
+}
 
-    $lockFile = "$LogFile.lock"
+# Define a function to periodically write log messages to the log file
+function Start-Logging {
+    param (
+        [string]$LogFile,
+        [System.Collections.Concurrent.ConcurrentQueue[System.String]]$Queue
+    )
 
-    try {
-        # Wait for file lock
-        while (Test-Path $lockFile) {
-            Start-Sleep -Milliseconds 100
+    while ($true) {
+        Start-Sleep -Seconds 1
+
+        if ($Queue.IsEmpty -eq $false) {
+            while ($Queue.TryDequeue([ref]$logMessage)) {
+                try {
+                    Add-Content -Path $LogFile -Value $logMessage -ErrorAction Stop
+                } catch {
+                    Write-Host "Error writing to log file: $_" -ForegroundColor Red
+                }
+            }
         }
-
-        # Create a lock file
-        New-Item -Path $lockFile -ItemType File -Force | Out-Null
-
-        # Append the log message to the log file
-        Add-Content -Path $LogFile -Value $logMessage
-
-        # Remove the lock file
-        Remove-Item -Path $lockFile -Force
-    } catch {
-        Write-Host "Error writing to log file: $_" -ForegroundColor Red
     }
 }
 
-# Initialize transcript
-Start-Transcript -Path $LogFile -Append -ErrorAction SilentlyContinue
+# Start the logging thread
+$loggingThread = [System.Threading.Thread]::new([System.Threading.ThreadStart]{
+    Start-Logging -LogFile $LogFile -Queue $logQueue
+})
+$loggingThread.IsBackground = $true
+$loggingThread.Start()
 
 # Function to perform cleanup
 function Perform-Cleanup {
@@ -148,22 +158,7 @@ foreach ($pathConfig in $sortedPaths) {
                     )
                     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $logMessage = "$timestamp [$Level] $Message"
-
-                    $lockFile = "$LogFile.lock"
-
-                    try {
-                        while (Test-Path $lockFile) {
-                            Start-Sleep -Milliseconds 100
-                        }
-
-                        New-Item -Path $lockFile -ItemType File -Force | Out-Null
-
-                        Add-Content -Path $LogFile -Value $logMessage
-
-                        Remove-Item -Path $lockFile -Force
-                    } catch {
-                        Write-Host "Error writing to log file: $_" -ForegroundColor Red
-                    }
+                    $logQueue.Enqueue($logMessage)
                 }
 
                 # Include Perform-Cleanup function here
@@ -290,11 +285,6 @@ if ($Parallel) {
     }
 }
 
-# Stop transcript if started
-try {
-    Stop-Transcript -ErrorAction Stop
-} catch {
-    Write-Log "Error stopping transcription. Error: $_" -Level "ERROR"
-}
-
+# Stop logging thread
+$loggingThread.Abort()
 Write-Log "Housekeeping completed." -Level "INFO"
