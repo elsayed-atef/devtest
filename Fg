@@ -1,6 +1,5 @@
 param (
     [string]$ConfigFile = "D:\data\housekeeping_config.xml",
-    [switch]$Parallel,
     [switch]$DryRun,
     [string]$LogFile = "D:\data\temp\housekeeping.log"
 )
@@ -27,10 +26,70 @@ function Write-Log {
     }
 }
 
+# Function to perform cleanup
+function Perform-Cleanup {
+    param (
+        [string]$Path,
+        [bool]$IncludeSubfolders,
+        [string[]]$ExcludePatterns,
+        [int]$RetentionDays,
+        [bool]$ArchiveBeforeDelete,
+        [string]$ArchivePath,
+        [switch]$DryRun,
+        [string]$LogFile
+    )
+
+    Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -Level "INFO" -LogFile $LogFile
+
+    $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
+    $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | 
+             Where-Object { $_.LastWriteTime -lt $RetentionDate }
+
+    if ($ExcludePatterns) {
+        foreach ($pattern in $ExcludePatterns) {
+            Write-Log "Excluding files matching pattern: $pattern" -Level "DEBUG" -LogFile $LogFile
+            $files = $files | Where-Object { $_.FullName -notmatch $pattern }
+        }
+    }
+
+    if ($DryRun) {
+        Write-Log "DryRun mode enabled. No files will be deleted or moved." -Level "DEBUG" -LogFile $LogFile
+        Write-Log "Files that would be processed:" -Level "DEBUG" -LogFile $LogFile
+        $files | ForEach-Object { Write-Log $_.FullName -Level "DEBUG" -LogFile $LogFile }
+        return
+    }
+
+    if ($ArchiveBeforeDelete -and $ArchivePath) {
+        Write-Log "Archiving files before deletion to $ArchivePath." -Level "INFO" -LogFile $LogFile
+        foreach ($file in $files) {
+            $dest = Join-Path -Path $ArchivePath -ChildPath $file.FullName.TrimStart($Path)
+            $destDir = Split-Path $dest
+            if (-not (Test-Path $destDir)) {
+                New-Item -Path $destDir -ItemType Directory | Out-Null
+                Write-Log "Created directory: $destDir" -Level "DEBUG" -LogFile $LogFile
+            }
+            Move-Item -Path $file.FullName -Destination $dest
+            Write-Log "Moved $($file.FullName) to $dest" -Level "DEBUG" -LogFile $LogFile
+        }
+    }
+
+    $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
+    Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -Level "INFO" -LogFile $LogFile
+
+    $deletedCount = 0
+    foreach ($file in $files) {
+        Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+        Write-Log "Deleted $($file.FullName)" -Level "DEBUG" -LogFile $LogFile
+        $deletedCount++
+    }
+
+    Write-Log "Deleted $deletedCount files." -Level "INFO" -LogFile $LogFile
+    $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
+    Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO" -LogFile $LogFile
+}
+
 # Import the XML configuration
 [xml]$xmlConfig = Get-Content $ConfigFile
-
-$jobs = @()
 
 # Process each path configuration
 foreach ($pathConfig in $xmlConfig.Housekeeping.Paths.Path) {
@@ -50,18 +109,13 @@ foreach ($pathConfig in $xmlConfig.Housekeeping.Paths.Path) {
         continue
     }
 
-    if ($Parallel) {
-        $job = Start-Job -FilePath "D:\scripts\Perform-Cleanup.ps1" -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
-        $jobs += $job
-    } else {
-        & "D:\scripts\Perform-Cleanup.ps1" -Path $path -IncludeSubfolders $includeSubfolders `
-                                            -ExcludePatterns $excludePatterns `
-                                            -RetentionDays $retentionDays `
-                                            -ArchiveBeforeDelete $archiveBeforeDelete `
-                                            -ArchivePath $archivePath `
-                                            -DryRun $DryRun `
-                                            -LogFile $LogFile
-    }
+    Perform-Cleanup -Path $path -IncludeSubfolders $includeSubfolders `
+                    -ExcludePatterns $excludePatterns `
+                    -RetentionDays $retentionDays `
+                    -ArchiveBeforeDelete $archiveBeforeDelete `
+                    -ArchivePath $archivePath `
+                    -DryRun $DryRun `
+                    -LogFile $LogFile
 }
 
 # Heapdump cleanup
@@ -71,30 +125,13 @@ $heapdumpRetentionDays = [int]$heapdumpConfig.RetentionDays
 
 if ($heapdumpConfig.Enabled -eq "true") {
     Write-Log "Performing heapdump cleanup for path: $heapdumpPath with retention period: $heapdumpRetentionDays days." -Level "INFO" -LogFile $LogFile
-    & "D:\scripts\Perform-Cleanup.ps1" -Path $heapdumpPath -IncludeSubfolders $false `
-                                        -ExcludePatterns @() `
-                                        -RetentionDays $heapdumpRetentionDays `
-                                        -ArchiveBeforeDelete $false `
-                                        -ArchivePath "" `
-                                        -DryRun $DryRun `
-                                        -LogFile $LogFile
-}
-
-# Wait for all jobs to finish and merge logs
-if ($Parallel) {
-    if ($jobs.Count -gt 0) {
-        $jobs | ForEach-Object {
-            try {
-                $jobResult = Wait-Job -Job $_ -ErrorAction Stop | Receive-Job -ErrorAction Stop
-                Write-Log "Job completed successfully: $($_.Id)" -Level "INFO" -LogFile $LogFile
-                $jobResult
-            } catch {
-                Write-Log "Failed to complete job $_. Error: $_" -Level "ERROR" -LogFile $LogFile
-            } finally {
-                Remove-Job -Job $_ -ErrorAction SilentlyContinue
-            }
-        }
-    }
+    Perform-Cleanup -Path $heapdumpPath -IncludeSubfolders $false `
+                    -ExcludePatterns @() `
+                    -RetentionDays $heapdumpRetentionDays `
+                    -ArchiveBeforeDelete $false `
+                    -ArchivePath "" `
+                    -DryRun $DryRun `
+                    -LogFile $LogFile
 }
 
 Write-Log "Housekeeping completed." -Level "INFO" -LogFile $LogFile
