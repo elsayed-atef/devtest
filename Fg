@@ -5,29 +5,34 @@ param (
     [string]$LogFile = "D:\data\temp\housekeeping.log"
 )
 
-# Define a named mutex for log file access
-$mutexName = "Global\LogFileMutex"
-$mutex = New-Object System.Threading.Mutex($false, $mutexName)
-
-# Function to write to the log file
+# Define a function to handle log writing with file locking
 function Write-Log {
     param (
         [string]$Message,
         [string]$Level = "INFO"
     )
+
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logMessage = "$timestamp [$Level] $Message"
 
-    # Acquire the mutex
-    $mutex.WaitOne()
+    $lockFile = "$LogFile.lock"
 
     try {
+        # Wait for file lock
+        while (Test-Path $lockFile) {
+            Start-Sleep -Milliseconds 100
+        }
+
+        # Create a lock file
+        New-Item -Path $lockFile -ItemType File -Force | Out-Null
+
+        # Append the log message to the log file
         Add-Content -Path $LogFile -Value $logMessage
+
+        # Remove the lock file
+        Remove-Item -Path $lockFile -Force
     } catch {
         Write-Host "Error writing to log file: $_" -ForegroundColor Red
-    } finally {
-        # Release the mutex
-        $mutex.ReleaseMutex()
     }
 }
 
@@ -144,16 +149,20 @@ foreach ($pathConfig in $sortedPaths) {
                     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $logMessage = "$timestamp [$Level] $Message"
 
-                    # Acquire the mutex
-                    $mutex.WaitOne()
+                    $lockFile = "$LogFile.lock"
 
                     try {
+                        while (Test-Path $lockFile) {
+                            Start-Sleep -Milliseconds 100
+                        }
+
+                        New-Item -Path $lockFile -ItemType File -Force | Out-Null
+
                         Add-Content -Path $LogFile -Value $logMessage
+
+                        Remove-Item -Path $lockFile -Force
                     } catch {
                         Write-Host "Error writing to log file: $_" -ForegroundColor Red
-                    } finally {
-                        # Release the mutex
-                        $mutex.ReleaseMutex()
                     }
                 }
 
