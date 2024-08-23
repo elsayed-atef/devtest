@@ -145,6 +145,7 @@ foreach ($pathConfig in $sortedPaths) {
                     $DryRun,
                     $LogFile
                 )
+                # Include Write-Log function here
                 function Write-Log {
                     param (
                         [string]$Message,
@@ -180,6 +181,7 @@ foreach ($pathConfig in $sortedPaths) {
                     }
                 }
 
+                # Include Perform-Cleanup function here
                 function Perform-Cleanup {
                     param (
                         [string]$Path,
@@ -255,7 +257,7 @@ foreach ($pathConfig in $sortedPaths) {
                                 -ArchivePath $ArchivePath `
                                 -DryRun $DryRun `
                                 -LogFile $LogFile
-            } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile -PassThru
+            } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
 
             $jobs += $job
         } else {
