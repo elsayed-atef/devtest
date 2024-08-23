@@ -248,10 +248,14 @@ if ($Parallel) {
                 $jobResult = Wait-Job -Job $_ -ErrorAction Stop | Receive-Job -ErrorAction Stop
                 Write-Log "Job completed successfully: $($_.Id)" -Level "INFO" -LogFile $LogFile
                 $jobResult
-                # Merge the temporary log file into the main log file
+                # Check if the temp log file exists before attempting to merge it
                 $tempLogFile = "$LogFile.$($_.Id).log"
-                Get-Content $tempLogFile | Add-Content -Path $LogFile
-                Remove-Item $tempLogFile -Force
+                if (Test-Path $tempLogFile) {
+                    Get-Content $tempLogFile | Add-Content -Path $LogFile
+                    Remove-Item $tempLogFile -Force
+                } else {
+                    Write-Log "Temp log file $tempLogFile not found." -Level "ERROR" -LogFile $LogFile
+                }
             } catch {
                 Write-Log "Failed to complete job $_. Error: $_" -Level "ERROR" -LogFile $LogFile
             } finally {
