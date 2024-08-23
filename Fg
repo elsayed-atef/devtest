@@ -116,10 +116,17 @@ foreach ($pathConfig in $sortedPaths) {
     if ($enabled) {
         Write-Log "Processing path: $path" -Level "INFO"
         if ($Parallel) {
-            $job = Start-Job -InitializationScript {
-                # Use Mutex for synchronized logging
-                $logMutex = [System.Threading.Mutex]::OpenExisting("Global\HousekeepingLogMutex")
-                
+            $job = Start-Job -ScriptBlock {
+                param (
+                    $Path,
+                    $IncludeSubfolders,
+                    $ExcludePatterns,
+                    $RetentionDays,
+                    $ArchiveBeforeDelete,
+                    $ArchivePath,
+                    $DryRun,
+                    $LogFile
+                )
                 function Write-Log {
                     param (
                         [string]$Message,
@@ -128,12 +135,7 @@ foreach ($pathConfig in $sortedPaths) {
                     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $logMessage = "$timestamp [$Level] $Message"
 
-                    $logMutex.WaitOne()
-                    try {
-                        Add-Content -Path $using:LogFile -Value $logMessage
-                    } finally {
-                        $logMutex.ReleaseMutex()
-                    }
+                    Add-Content -Path $LogFile -Value $logMessage
                 }
 
                 function Perform-Cleanup {
@@ -203,15 +205,16 @@ foreach ($pathConfig in $sortedPaths) {
                     $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
                     Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO"
                 }
-            } -ScriptBlock {
-                Perform-Cleanup -Path $using:path -IncludeSubfolders $using:includeSubfolders `
-                               -ExcludePatterns $using:excludePatterns `
-                               -RetentionDays $using:retentionDays `
-                               -ArchiveBeforeDelete $using:archiveBeforeDelete `
-                               -ArchivePath $using:archivePath `
-                               -DryRun:$using:DryRun `
-                               -LogFile $using:LogFile
-            }
+
+                Perform-Cleanup -Path $Path -IncludeSubfolders $IncludeSubfolders `
+                                -ExcludePatterns $ExcludePatterns `
+                                -RetentionDays $RetentionDays `
+                                -ArchiveBeforeDelete $ArchiveBeforeDelete `
+                                -ArchivePath $ArchivePath `
+                                -DryRun $DryRun `
+                                -LogFile $LogFile
+            } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
+
             $jobs += $job
         } else {
             Perform-Cleanup -Path $path -IncludeSubfolders $includeSubfolders `
@@ -219,7 +222,7 @@ foreach ($pathConfig in $sortedPaths) {
                             -RetentionDays $retentionDays `
                             -ArchiveBeforeDelete $archiveBeforeDelete `
                             -ArchivePath $archivePath `
-                            -DryRun:$DryRun `
+                            -DryRun $DryRun `
                             -LogFile $LogFile
         }
     }
@@ -237,7 +240,7 @@ if ($heapdumpConfig.Enabled -eq "true") {
                     -RetentionDays $heapdumpRetentionDays `
                     -ArchiveBeforeDelete $false `
                     -ArchivePath "" `
-                    -DryRun:$DryRun `
+                    -DryRun $DryRun `
                     -LogFile $LogFile
 }
 
