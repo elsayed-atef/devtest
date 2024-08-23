@@ -1,14 +1,10 @@
-param (
-    [string]$ConfigFile = "D:\data\housekeeping_config.xml",
-    [switch]$Parallel,
-    [switch]$DryRun,
-    [string]$LogFile = "D:\data\temp\housekeeping.log"
-)
-
 # Import the XML configuration
 $xmlConfig = [xml](Get-Content $ConfigFile)
 
-# Function to write to logfile
+# Mutex for log file access synchronization
+$logMutex = New-Object System.Threading.Mutex($false, "Global\HousekeepingLogMutex")
+
+# Function to write to logfile only
 function Write-Log {
     param (
         [string]$Message,
@@ -16,8 +12,14 @@ function Write-Log {
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logMessage = "$timestamp [$Level] $Message"
-    Write-Host $logMessage
-    Add-Content -Path $LogFile -Value $logMessage
+
+    # Wait for the mutex, then write to the log file
+    $logMutex.WaitOne()
+    try {
+        Add-Content -Path $LogFile -Value $logMessage
+    } finally {
+        $logMutex.ReleaseMutex()
+    }
 }
 
 # Function to perform cleanup
@@ -33,60 +35,60 @@ function Perform-Cleanup {
         [string]$LogFile
     )
 
-    Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -LogFile $LogFile
+    Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -Level "INFO"
 
     # Calculate retention date
     $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
 
     # Get files to delete
-    $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders | 
+    $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | 
              Where-Object { $_.LastWriteTime -lt $RetentionDate }
 
     if ($ExcludePatterns) {
         foreach ($pattern in $ExcludePatterns) {
-            Write-Log "Excluding files matching pattern: $pattern" "DEBUG" -LogFile $LogFile
+            Write-Log "Excluding files matching pattern: $pattern" -Level "DEBUG"
             $files = $files | Where-Object { $_.FullName -notmatch $pattern }
         }
     }
 
     if ($DryRun) {
-        Write-Log "DryRun mode enabled. No files will be deleted or moved." "DEBUG" -LogFile $LogFile
-        Write-Log "Files that would be processed:" -LogFile $LogFile
-        $files | ForEach-Object { Write-Log $_.FullName "DEBUG" -LogFile $LogFile }
+        Write-Log "DryRun mode enabled. No files will be deleted or moved." -Level "DEBUG"
+        Write-Log "Files that would be processed:" -Level "DEBUG"
+        $files | ForEach-Object { Write-Log $_.FullName -Level "DEBUG" }
         return
     }
 
     # Archive files if required
     if ($ArchiveBeforeDelete -and $ArchivePath) {
-        Write-Log "Archiving files before deletion to $ArchivePath." -LogFile $LogFile
+        Write-Log "Archiving files before deletion to $ArchivePath." -Level "INFO"
         foreach ($file in $files) {
             $dest = Join-Path -Path $ArchivePath -ChildPath $file.FullName.TrimStart($Path)
             $destDir = Split-Path $dest
             if (-not (Test-Path $destDir)) {
                 New-Item -Path $destDir -ItemType Directory | Out-Null
-                Write-Log "Created directory: $destDir" "DEBUG" -LogFile $LogFile
+                Write-Log "Created directory: $destDir" -Level "DEBUG"
             }
             Move-Item -Path $file.FullName -Destination $dest
-            Write-Log "Moved $($file.FullName) to $dest" "DEBUG" -LogFile $LogFile
+            Write-Log "Moved $($file.FullName) to $dest" -Level "DEBUG"
         }
     }
 
     # Report before deletion
     $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -LogFile $LogFile
+    Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -Level "INFO"
 
     # Delete files
     $deletedCount = 0
     foreach ($file in $files) {
-        Remove-Item -Path $file.FullName -Force
-        Write-Log "Deleted $($file.FullName)" "DEBUG" -LogFile $LogFile
+        Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+        Write-Log "Deleted $($file.FullName)" -Level "DEBUG"
         $deletedCount++
     }
 
     # Report after deletion
-    Write-Log "Deleted $deletedCount files." -LogFile $LogFile
-    $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -LogFile $LogFile
+    Write-Log "Deleted $deletedCount files." -Level "INFO"
+    $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
+    Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO"
 }
 
 # Sort paths to ensure subfolders are processed before parent folders
@@ -103,19 +105,26 @@ foreach ($pathConfig in $sortedPaths) {
     $archivePath = $pathConfig.ArchivePath
 
     if ($enabled) {
-        Write-Log "Processing path: $path" -LogFile $LogFile
+        Write-Log "Processing path: $path" -Level "INFO"
         if ($Parallel) {
             Start-Job -InitializationScript {
+                # Use Mutex for synchronized logging
+                $logMutex = [System.Threading.Mutex]::OpenExisting("Global\HousekeepingLogMutex")
+                
                 function Write-Log {
                     param (
                         [string]$Message,
-                        [string]$Level = "INFO",
-                        [string]$LogFile
+                        [string]$Level = "INFO"
                     )
                     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $logMessage = "$timestamp [$Level] $Message"
-                    Write-Host $logMessage
-                    Add-Content -Path $LogFile -Value $logMessage
+
+                    $logMutex.WaitOne()
+                    try {
+                        Add-Content -Path $using:LogFile -Value $logMessage
+                    } finally {
+                        $logMutex.ReleaseMutex()
+                    }
                 }
 
                 function Perform-Cleanup {
@@ -130,60 +139,60 @@ foreach ($pathConfig in $sortedPaths) {
                         [string]$LogFile
                     )
 
-                    Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -LogFile $LogFile
+                    Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -Level "INFO"
 
                     # Calculate retention date
                     $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
 
                     # Get files to delete
-                    $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders | 
+                    $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | 
                              Where-Object { $_.LastWriteTime -lt $RetentionDate }
 
                     if ($ExcludePatterns) {
                         foreach ($pattern in $ExcludePatterns) {
-                            Write-Log "Excluding files matching pattern: $pattern" "DEBUG" -LogFile $LogFile
+                            Write-Log "Excluding files matching pattern: $pattern" -Level "DEBUG"
                             $files = $files | Where-Object { $_.FullName -notmatch $pattern }
                         }
                     }
 
                     if ($DryRun) {
-                        Write-Log "DryRun mode enabled. No files will be deleted or moved." "DEBUG" -LogFile $LogFile
-                        Write-Log "Files that would be processed:" -LogFile $LogFile
-                        $files | ForEach-Object { Write-Log $_.FullName "DEBUG" -LogFile $LogFile }
+                        Write-Log "DryRun mode enabled. No files will be deleted or moved." -Level "DEBUG"
+                        Write-Log "Files that would be processed:" -Level "DEBUG"
+                        $files | ForEach-Object { Write-Log $_.FullName -Level "DEBUG" }
                         return
                     }
 
                     # Archive files if required
                     if ($ArchiveBeforeDelete -and $ArchivePath) {
-                        Write-Log "Archiving files before deletion to $ArchivePath." -LogFile $LogFile
+                        Write-Log "Archiving files before deletion to $ArchivePath." -Level "INFO"
                         foreach ($file in $files) {
                             $dest = Join-Path -Path $ArchivePath -ChildPath $file.FullName.TrimStart($Path)
                             $destDir = Split-Path $dest
                             if (-not (Test-Path $destDir)) {
                                 New-Item -Path $destDir -ItemType Directory | Out-Null
-                                Write-Log "Created directory: $destDir" "DEBUG" -LogFile $LogFile
+                                Write-Log "Created directory: $destDir" -Level "DEBUG"
                             }
                             Move-Item -Path $file.FullName -Destination $dest
-                            Write-Log "Moved $($file.FullName) to $dest" "DEBUG" -LogFile $LogFile
+                            Write-Log "Moved $($file.FullName) to $dest" -Level "DEBUG"
                         }
                     }
 
                     # Report before deletion
                     $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
-                    Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -LogFile $LogFile
+                    Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -Level "INFO"
 
                     # Delete files
                     $deletedCount = 0
                     foreach ($file in $files) {
-                        Remove-Item -Path $file.FullName -Force
-                        Write-Log "Deleted $($file.FullName)" "DEBUG" -LogFile $LogFile
+                        Remove-Item -Path $file.FullName -Force -ErrorAction Stop
+                        Write-Log "Deleted $($file.FullName)" -Level "DEBUG"
                         $deletedCount++
                     }
 
                     # Report after deletion
-                    Write-Log "Deleted $deletedCount files." -LogFile $LogFile
-                    $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders | Measure-Object -Property Length -Sum).Sum / 1MB
-                    Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -LogFile $LogFile
+                    Write-Log "Deleted $deletedCount files." -Level "INFO"
+                    $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
+                    Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO"
                 }
             } -ScriptBlock {
                 Perform-Cleanup -Path $using:path -IncludeSubfolders $using:includeSubfolders `
@@ -193,7 +202,7 @@ foreach ($pathConfig in $sortedPaths) {
                                -ArchivePath $using:archivePath `
                                -DryRun:$using:DryRun `
                                -LogFile $using:LogFile
-            } | Out-Null
+            }
         } else {
             Perform-Cleanup -Path $path -IncludeSubfolders $includeSubfolders `
                             -ExcludePatterns $excludePatterns `
@@ -228,3 +237,5 @@ if ($Parallel) {
 }
 
 Write-Log "Housekeeping completed." -LogFile $LogFile
+
+Stop-Transcript
