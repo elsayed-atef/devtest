@@ -1,105 +1,125 @@
-[CmdletBinding()]
 param (
-    [string]$ConfigFile = "C:\housekeeping_config.xml"
+    [string]$ConfigFile = "D:\data\housekeeping_config.xml",
+    [switch]$Parallel,
+    [switch]$DryRun
 )
 
-# Function to load and parse XML configuration
-function Get-Config {
+# Import the XML configuration
+$xmlConfig = [xml](Get-Content $ConfigFile)
+
+# Function to perform cleanup
+function Perform-Cleanup {
     param (
-        [string]$xmlPath
+        [string]$Path,
+        [bool]$IncludeSubfolders,
+        [string[]]$ExcludePatterns,
+        [int]$RetentionDays,
+        [bool]$ArchiveBeforeDelete,
+        [string]$ArchivePath,
+        [switch]$DryRun
     )
 
-    if (-not (Test-Path $xmlPath)) {
-        throw "Configuration file not found: $xmlPath"
-    }
+    # Calculate retention date
+    $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
 
-    try {
-        [xml]$xml = [xml](Get-Content $xmlPath)
-        return $xml
-    } catch {
-        throw "Failed to read or parse the XML file: $_"
-    }
-}
+    # Get files to delete
+    $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders | 
+             Where-Object { $_.LastWriteTime -lt $RetentionDate }
 
-# Function to log messages
-function Log-Message {
-    param (
-        [string]$message,
-        [string]$LogFile = "D:\data\temp\housekeeping_log.txt"
-    )
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp - $message"
-    Add-Content -Path $LogFile -Value $logEntry
-}
-
-# Function to apply housekeeping rules
-function Apply-Housekeeping {
-    param (
-        [xml]$config,
-        [string]$logFilePath
-    )
-
-    try {
-        Log-Message -message "Applying housekeeping rules from config." -LogFile $logFilePath
-
-        foreach ($rule in $config.Housekeeping.PathRules.PathRule) {
-            Log-Message -message "Processing rule for path: $($rule.Path)" -LogFile $logFilePath
-
-            # Handle ExcludeFolders
-            $excludeFolders = @()
-            if ($rule.ExcludeFolders -and $rule.ExcludeFolders.ExcludeFolder) {
-                foreach ($folder in $rule.ExcludeFolders.ExcludeFolder) {
-                    if ($folder -and $folder -ne "") {
-                        $excludeFolders += $folder
-                    }
-                }
-            }
-
-            if ($excludeFolders.Count -gt 0) {
-                Log-Message -message "Exclude Folders: $($excludeFolders -join ', ')" -LogFile $logFilePath
-            } else {
-                Log-Message -message "Exclude Folders: None" -LogFile $logFilePath
-            }
-
-            # Handle Archive
-            $archivePath = $rule.Archive
-            if ($archivePath -and $archivePath -ne "") {
-                Log-Message -message "Archive Path: $archivePath" -LogFile $logFilePath
-            } else {
-                Log-Message -message "Archive: None" -LogFile $logFilePath
-            }
-
-            # Log the rule details
-            Log-Message -message "Rule Details: $(($rule | Out-String).Trim())" -LogFile $logFilePath
-
-            # TODO: Implement the actual housekeeping logic here
+    if ($ExcludePatterns) {
+        foreach ($pattern in $ExcludePatterns) {
+            $files = $files | Where-Object { $_.FullName -notmatch $pattern }
         }
-    } catch {
-        Log-Message -message "Error applying housekeeping rules: $_" -LogFile $logFilePath
+    }
+
+    # DryRun mode
+    if ($DryRun) {
+        Write-Host "DryRun: The following files would be processed:"
+        $files | ForEach-Object { Write-Host $_.FullName }
+        return
+    }
+
+    # Archive files if required
+    if ($ArchiveBeforeDelete -and $ArchivePath) {
+        foreach ($file in $files) {
+            $dest = Join-Path -Path $ArchivePath -ChildPath $file.FullName.TrimStart($Path)
+            $destDir = Split-Path $dest
+            if (-not (Test-Path $destDir)) {
+                New-Item -Path $destDir -ItemType Directory | Out-Null
+            }
+            Move-Item -Path $file.FullName -Destination $dest
+        }
+    }
+
+    # Report before deletion
+    $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
+    Write-Host "Initial size: $([math]::round($initialSize, 2)) MB"
+
+    # Delete files
+    $deletedCount = 0
+    foreach ($file in $files) {
+        Remove-Item -Path $file.FullName -Force
+        $deletedCount++
+    }
+
+    # Report after deletion
+    Write-Host "$deletedCount files deleted."
+    $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders | Measure-Object -Property Length -Sum).Sum / 1MB
+    Write-Host "Final size: $([math]::round($finalSize, 2)) MB"
+}
+
+# Sort paths to ensure subfolders are processed before parent folders
+$sortedPaths = $xmlConfig.Housekeeping.Paths.Path | Sort-Object -Property { $_.Path.Length } -Descending
+
+# Process each path configuration
+foreach ($pathConfig in $sortedPaths) {
+    $path = $pathConfig.Path
+    $enabled = [bool]$pathConfig.Enabled
+    $includeSubfolders = [bool]$pathConfig.IncludeSubfolders
+    $excludePatterns = $pathConfig.ExcludePatterns.Pattern
+    $retentionDays = [int]$pathConfig.RetentionDays
+    $archiveBeforeDelete = [bool]$pathConfig.ArchiveBeforeDelete
+    $archivePath = $pathConfig.ArchivePath
+
+    if ($enabled) {
+        if ($Parallel) {
+            Start-Job -ScriptBlock {
+                Perform-Cleanup -Path $using:path -IncludeSubfolders $using:includeSubfolders `
+                               -ExcludePatterns $using:excludePatterns `
+                               -RetentionDays $using:retentionDays `
+                               -ArchiveBeforeDelete $using:archiveBeforeDelete `
+                               -ArchivePath $using:archivePath `
+                               -DryRun:$using:DryRun
+            } | Out-Null
+        } else {
+            Perform-Cleanup -Path $path -IncludeSubfolders $includeSubfolders `
+                            -ExcludePatterns $excludePatterns `
+                            -RetentionDays $retentionDays `
+                            -ArchiveBeforeDelete $archiveBeforeDelete `
+                            -ArchivePath $archivePath `
+                            -DryRun:$DryRun
+        }
     }
 }
 
-# Main script execution
-try {
-    $config = Get-Config -xmlPath $ConfigFile
-    $logFilePath = "D:\data\temp\housekeeping_log.txt"
+# Heapdump cleanup
+$heapdumpConfig = $xmlConfig.Housekeeping.Heapdump
+$heapdumpPath = $heapdumpConfig.Path
+$heapdumpRetentionDays = [int]$heapdumpConfig.RetentionDays
 
-    Log-Message -message "Loaded configuration from $ConfigFile" -LogFile $logFilePath
-} catch {
-    Write-Error $_.Exception.Message
-    exit 1
+if ($heapdumpConfig.Enabled -eq "true") {
+    Write-Host "Performing heapdump cleanup..."
+    Perform-Cleanup -Path $heapdumpPath -IncludeSubfolders $false `
+                    -ExcludePatterns @() `
+                    -RetentionDays $heapdumpRetentionDays `
+                    -ArchiveBeforeDelete $false `
+                    -ArchivePath "" `
+                    -DryRun:$DryRun
 }
 
-# Main script loop
-while ($true) {
-    try {
-        Log-Message -message "Starting housekeeping run." -LogFile $logFilePath
-        Apply-Housekeeping -config $config -logFilePath $logFilePath
-        Log-Message -message "Housekeeping run completed. Sleeping for 5 hours." -LogFile $logFilePath
-
-        # Sleep for 5 hours before the next run
-        Start-Sleep -Seconds (5 * 3600)
-    } catch {
-        Log-Message -message "Error during housekeeping run: $_" -LogFile $logFilePath
-    }
+# Wait for all jobs to finish
+if ($Parallel) {
+    Get-Job | Wait-Job | Receive-Job | Remove-Job
 }
+
+Write-Host "Housekeeping completed."
