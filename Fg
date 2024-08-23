@@ -105,6 +105,10 @@ foreach ($pathConfig in $sortedPaths) {
     $archiveBeforeDelete = [bool]$pathConfig.ArchiveBeforeDelete
     $archivePath = $pathConfig.ArchivePath
 
+    # Log the enabled status
+    Write-Log "Processing path: $path" -Level "DEBUG" -LogFile $LogFile
+    Write-Log "Enabled flag for $path is set to $enabled" -Level "DEBUG" -LogFile $LogFile
+
     # Explicitly check if rule is enabled
     if (-not $enabled) {
         Write-Log "Skipping disabled rule for path: $path" -Level "INFO" -LogFile $LogFile
