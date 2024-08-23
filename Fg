@@ -5,9 +5,6 @@ param (
     [string]$LogFile = "D:\data\temp\housekeeping.log"
 )
 
-# Initialize the mutex
-$logMutex = New-Object System.Threading.Mutex($false, "Global\HousekeepingLogMutex")
-
 # Function to write to the log file
 function Write-Log {
     param (
@@ -17,12 +14,30 @@ function Write-Log {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logMessage = "$timestamp [$Level] $Message"
 
-    # Ensure only one process writes to the log file at a time
-    $logMutex.WaitOne()
-    try {
-        Add-Content -Path $LogFile -Value $logMessage
-    } finally {
-        $logMutex.ReleaseMutex()
+    # Lock file mechanism
+    $lockFile = "$LogFile.lock"
+    $maxAttempts = 10
+    $attempt = 0
+
+    while ($attempt -lt $maxAttempts) {
+        if (-not (Test-Path $lockFile)) {
+            try {
+                New-Item -Path $lockFile -ItemType File -Force | Out-Null
+                Add-Content -Path $LogFile -Value $logMessage
+                Remove-Item -Path $lockFile -ErrorAction SilentlyContinue
+                break
+            } catch {
+                Start-Sleep -Seconds 1
+                $attempt++
+            }
+        } else {
+            Start-Sleep -Seconds 1
+            $attempt++
+        }
+    }
+
+    if ($attempt -eq $maxAttempts) {
+        Write-Host "Failed to acquire log file lock after multiple attempts." -ForegroundColor Red
     }
 }
 
@@ -138,12 +153,30 @@ foreach ($pathConfig in $sortedPaths) {
                     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $logMessage = "$timestamp [$Level] $Message"
 
-                    # Access the log file safely
-                    $logMutex.WaitOne()
-                    try {
-                        Add-Content -Path $LogFile -Value $logMessage
-                    } finally {
-                        $logMutex.ReleaseMutex()
+                    # Lock file mechanism
+                    $lockFile = "$LogFile.lock"
+                    $maxAttempts = 10
+                    $attempt = 0
+
+                    while ($attempt -lt $maxAttempts) {
+                        if (-not (Test-Path $lockFile)) {
+                            try {
+                                New-Item -Path $lockFile -ItemType File -Force | Out-Null
+                                Add-Content -Path $LogFile -Value $logMessage
+                                Remove-Item -Path $lockFile -ErrorAction SilentlyContinue
+                                break
+                            } catch {
+                                Start-Sleep -Seconds 1
+                                $attempt++
+                            }
+                        } else {
+                            Start-Sleep -Seconds 1
+                            $attempt++
+                        }
+                    }
+
+                    if ($attempt -eq $maxAttempts) {
+                        Write-Host "Failed to acquire log file lock after multiple attempts." -ForegroundColor Red
                     }
                 }
 
@@ -222,7 +255,7 @@ foreach ($pathConfig in $sortedPaths) {
                                 -ArchivePath $ArchivePath `
                                 -DryRun $DryRun `
                                 -LogFile $LogFile
-            } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
+            } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile -PassThru
 
             $jobs += $job
         } else {
@@ -258,7 +291,9 @@ if ($Parallel) {
     if ($jobs.Count -gt 0) {
         $jobs | ForEach-Object {
             try {
-                Wait-Job -Job $_ -ErrorAction Stop | Receive-Job -ErrorAction Stop
+                $jobResult = Wait-Job -Job $_ -ErrorAction Stop | Receive-Job -ErrorAction Stop
+                Write-Log "Job completed successfully: $($_.Id)" -Level "INFO"
+                $jobResult
             } catch {
                 Write-Log "Failed to complete job $_. Error: $_" -Level "ERROR"
             } finally {
