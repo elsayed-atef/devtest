@@ -1,3 +1,10 @@
+param (
+    [string]$ConfigFile = "D:\data\housekeeping_config.xml",
+    [switch]$Parallel,
+    [switch]$DryRun,
+    [string]$LogFile = "D:\data\temp\housekeeping.log"
+)
+
 # Import the XML configuration
 $xmlConfig = [xml](Get-Content $ConfigFile)
 
@@ -94,6 +101,8 @@ function Perform-Cleanup {
 # Sort paths to ensure subfolders are processed before parent folders
 $sortedPaths = $xmlConfig.Housekeeping.Paths.Path | Sort-Object -Property { $_.Path.Length } -Descending
 
+$jobs = @()
+
 # Process each path configuration
 foreach ($pathConfig in $sortedPaths) {
     $path = $pathConfig.Path
@@ -107,7 +116,7 @@ foreach ($pathConfig in $sortedPaths) {
     if ($enabled) {
         Write-Log "Processing path: $path" -Level "INFO"
         if ($Parallel) {
-            Start-Job -InitializationScript {
+            $job = Start-Job -InitializationScript {
                 # Use Mutex for synchronized logging
                 $logMutex = [System.Threading.Mutex]::OpenExisting("Global\HousekeepingLogMutex")
                 
@@ -203,6 +212,7 @@ foreach ($pathConfig in $sortedPaths) {
                                -DryRun:$using:DryRun `
                                -LogFile $using:LogFile
             }
+            $jobs += $job
         } else {
             Perform-Cleanup -Path $path -IncludeSubfolders $includeSubfolders `
                             -ExcludePatterns $excludePatterns `
@@ -221,7 +231,7 @@ $heapdumpPath = $heapdumpConfig.Path
 $heapdumpRetentionDays = [int]$heapdumpConfig.RetentionDays
 
 if ($heapdumpConfig.Enabled -eq "true") {
-    Write-Log "Performing heapdump cleanup for path: $heapdumpPath with retention period: $heapdumpRetentionDays days." -LogFile $LogFile
+    Write-Log "Performing heapdump cleanup for path: $heapdumpPath with retention period: $heapdumpRetentionDays days." -Level "INFO"
     Perform-Cleanup -Path $heapdumpPath -IncludeSubfolders $false `
                     -ExcludePatterns @() `
                     -RetentionDays $heapdumpRetentionDays `
@@ -233,9 +243,11 @@ if ($heapdumpConfig.Enabled -eq "true") {
 
 # Wait for all jobs to finish
 if ($Parallel) {
-    Get-Job | Wait-Job | Receive-Job | Remove-Job
+    if ($jobs.Count -gt 0) {
+        $jobs | Wait-Job | Receive-Job | Remove-Job
+    }
 }
 
-Write-Log "Housekeeping completed." -LogFile $LogFile
+Write-Log "Housekeeping completed." -Level "INFO" -LogFile $LogFile
 
 Stop-Transcript
