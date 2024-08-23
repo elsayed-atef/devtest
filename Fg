@@ -43,10 +43,7 @@ function Perform-Cleanup {
 
     Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -Level "INFO" -LogFile $LogFile
 
-    # Calculate retention date
     $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
-
-    # Get files to delete
     $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | 
              Where-Object { $_.LastWriteTime -lt $RetentionDate }
 
@@ -64,7 +61,6 @@ function Perform-Cleanup {
         return
     }
 
-    # Archive files if required
     if ($ArchiveBeforeDelete -and $ArchivePath) {
         Write-Log "Archiving files before deletion to $ArchivePath." -Level "INFO" -LogFile $LogFile
         foreach ($file in $files) {
@@ -79,11 +75,9 @@ function Perform-Cleanup {
         }
     }
 
-    # Report before deletion
     $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
     Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -Level "INFO" -LogFile $LogFile
 
-    # Delete files
     $deletedCount = 0
     foreach ($file in $files) {
         Remove-Item -Path $file.FullName -Force -ErrorAction Stop
@@ -91,7 +85,6 @@ function Perform-Cleanup {
         $deletedCount++
     }
 
-    # Report after deletion
     Write-Log "Deleted $deletedCount files." -Level "INFO" -LogFile $LogFile
     $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
     Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO" -LogFile $LogFile
@@ -138,6 +131,7 @@ foreach ($pathConfig in $xmlConfig.Housekeeping.Paths.Path) {
                 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                 $logMessage = "$timestamp [$Level] $Message"
 
+                # Acquire the lock before writing to the log file
                 [System.Threading.Monitor]::Enter($global:logLock)
                 try {
                     Add-Content -Path $LogFile -Value $logMessage -ErrorAction Stop
