@@ -132,6 +132,7 @@ foreach ($pathConfig in $sortedPaths) {
     }
 
     $tempLogFile = "$LogFile.$([System.Guid]::NewGuid()).log"
+
     if ($Parallel) {
         $job = Start-Job -ScriptBlock {
             param (
@@ -142,7 +143,8 @@ foreach ($pathConfig in $sortedPaths) {
                 $ArchiveBeforeDelete,
                 $ArchivePath,
                 $DryRun,
-                $LogFile
+                $LogFile,
+                $TempLogFile
             )
             # Include Write-Log function here
             function Write-Log {
@@ -232,8 +234,8 @@ foreach ($pathConfig in $sortedPaths) {
                             -ArchiveBeforeDelete $ArchiveBeforeDelete `
                             -ArchivePath $ArchivePath `
                             -DryRun $DryRun `
-                            -LogFile $LogFile
-        } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $tempLogFile
+                            -LogFile $TempLogFile
+        } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile, $tempLogFile
 
         $jobs += $job
     } else {
