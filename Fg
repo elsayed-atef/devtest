@@ -5,7 +5,10 @@ param (
     [string]$LogFile = "D:\data\temp\housekeeping.log"
 )
 
-# Function to write to logfile only
+# Initialize the mutex
+$logMutex = New-Object System.Threading.Mutex($false, "Global\HousekeepingLogMutex")
+
+# Function to write to the log file
 function Write-Log {
     param (
         [string]$Message,
@@ -14,7 +17,7 @@ function Write-Log {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logMessage = "$timestamp [$Level] $Message"
 
-    # Wait for the mutex, then write to the log file
+    # Ensure only one process writes to the log file at a time
     $logMutex.WaitOne()
     try {
         Add-Content -Path $LogFile -Value $logMessage
@@ -23,8 +26,7 @@ function Write-Log {
     }
 }
 
-# Initialize the log file
-$logMutex = New-Object System.Threading.Mutex($false, "Global\HousekeepingLogMutex")
+# Initialize transcript
 Start-Transcript -Path $LogFile -Append -ErrorAction SilentlyContinue
 
 # Function to perform cleanup
@@ -136,7 +138,13 @@ foreach ($pathConfig in $sortedPaths) {
                     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                     $logMessage = "$timestamp [$Level] $Message"
 
-                    Add-Content -Path $LogFile -Value $logMessage
+                    # Access the log file safely
+                    $logMutex.WaitOne()
+                    try {
+                        Add-Content -Path $LogFile -Value $logMessage
+                    } finally {
+                        $logMutex.ReleaseMutex()
+                    }
                 }
 
                 function Perform-Cleanup {
@@ -260,7 +268,7 @@ if ($Parallel) {
     }
 }
 
-# Stop transcription if started
+# Stop transcript if started
 try {
     Stop-Transcript -ErrorAction Stop
 } catch {
