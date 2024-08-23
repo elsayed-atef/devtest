@@ -1,14 +1,14 @@
 param (
-    [string]$Path,
-    [bool]$IncludeSubfolders,
-    [string[]]$ExcludePatterns,
-    [int]$RetentionDays,
-    [bool]$ArchiveBeforeDelete,
-    [string]$ArchivePath,
+    [string]$ConfigFile = "D:\data\housekeeping_config.xml",
+    [switch]$Parallel,
     [switch]$DryRun,
-    [string]$LogFile
+    [string]$LogFile = "D:\data\temp\housekeeping.log"
 )
 
+# Global lock object for logging
+$global:logLock = [System.Object]::new()
+
+# Function to write logs
 function Write-Log {
     param (
         [string]$Message,
@@ -27,72 +27,72 @@ function Write-Log {
     }
 }
 
-function Perform-Cleanup {
-    param (
-        [string]$Path,
-        [bool]$IncludeSubfolders,
-        [string[]]$ExcludePatterns,
-        [int]$RetentionDays,
-        [bool]$ArchiveBeforeDelete,
-        [string]$ArchivePath,
-        [switch]$DryRun,
-        [string]$LogFile
-    )
+# Import the XML configuration
+[xml]$xmlConfig = Get-Content $ConfigFile
 
-    Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -Level "INFO" -LogFile $LogFile
+# Process each path configuration
+foreach ($pathConfig in $xmlConfig.Housekeeping.Paths.Path) {
+    $path = $pathConfig.Path
+    $enabled = $pathConfig.Enabled -eq "true"
+    $includeSubfolders = [bool]$pathConfig.IncludeSubfolders
+    $excludePatterns = $pathConfig.ExcludePatterns.Pattern
+    $retentionDays = [int]$pathConfig.RetentionDays
+    $archiveBeforeDelete = [bool]$pathConfig.ArchiveBeforeDelete
+    $archivePath = $pathConfig.ArchivePath
 
-    $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
-    $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | 
-             Where-Object { $_.LastWriteTime -lt $RetentionDate }
+    Write-Log "Processing path: $path" -Level "DEBUG" -LogFile $LogFile
+    Write-Log "Enabled flag for $path is set to $enabled" -Level "DEBUG" -LogFile $LogFile
 
-    if ($ExcludePatterns) {
-        foreach ($pattern in $ExcludePatterns) {
-            Write-Log "Excluding files matching pattern: $pattern" -Level "DEBUG" -LogFile $LogFile
-            $files = $files | Where-Object { $_.FullName -notmatch $pattern }
-        }
+    if (-not $enabled) {
+        Write-Log "Skipping disabled rule for path: $path" -Level "INFO" -LogFile $LogFile
+        continue
     }
 
-    if ($DryRun) {
-        Write-Log "DryRun mode enabled. No files will be deleted or moved." -Level "DEBUG" -LogFile $LogFile
-        Write-Log "Files that would be processed:" -Level "DEBUG" -LogFile $LogFile
-        $files | ForEach-Object { Write-Log $_.FullName -Level "DEBUG" -LogFile $LogFile }
-        return
+    if ($Parallel) {
+        Start-Job -ScriptBlock {
+            param (
+                $Path,
+                $IncludeSubfolders,
+                $ExcludePatterns,
+                $RetentionDays,
+                $ArchiveBeforeDelete,
+                $ArchivePath,
+                $DryRun,
+                $LogFile
+            )
+
+            . "D:\scripts\Perform-Cleanup.ps1" -Path $Path -IncludeSubfolders $IncludeSubfolders `
+                                                -ExcludePatterns $ExcludePatterns `
+                                                -RetentionDays $RetentionDays `
+                                                -ArchiveBeforeDelete $ArchiveBeforeDelete `
+                                                -ArchivePath $ArchivePath `
+                                                -DryRun $DryRun `
+                                                -LogFile $LogFile
+        } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
+    } else {
+        . "D:\scripts\Perform-Cleanup.ps1" -Path $path -IncludeSubfolders $includeSubfolders `
+                                            -ExcludePatterns $excludePatterns `
+                                            -RetentionDays $retentionDays `
+                                            -ArchiveBeforeDelete $archiveBeforeDelete `
+                                            -ArchivePath $archivePath `
+                                            -DryRun $DryRun `
+                                            -LogFile $LogFile
     }
-
-    if ($ArchiveBeforeDelete -and $ArchivePath) {
-        Write-Log "Archiving files before deletion to $ArchivePath." -Level "INFO" -LogFile $LogFile
-        foreach ($file in $files) {
-            $dest = Join-Path -Path $ArchivePath -ChildPath $file.FullName.TrimStart($Path)
-            $destDir = Split-Path $dest
-            if (-not (Test-Path $destDir)) {
-                New-Item -Path $destDir -ItemType Directory | Out-Null
-                Write-Log "Created directory: $destDir" -Level "DEBUG" -LogFile $LogFile
-            }
-            Move-Item -Path $file.FullName -Destination $dest
-            Write-Log "Moved $($file.FullName) to $dest" -Level "DEBUG" -LogFile $LogFile
-        }
-    }
-
-    $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -Level "INFO" -LogFile $LogFile
-
-    $deletedCount = 0
-    foreach ($file in $files) {
-        Remove-Item -Path $file.FullName -Force -ErrorAction Stop
-        Write-Log "Deleted $($file.FullName)" -Level "DEBUG" -LogFile $LogFile
-        $deletedCount++
-    }
-
-    Write-Log "Deleted $deletedCount files." -Level "INFO" -LogFile $LogFile
-    $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO" -LogFile $LogFile
 }
 
-# Execute the cleanup function
-Perform-Cleanup -Path $Path -IncludeSubfolders $IncludeSubfolders `
-                -ExcludePatterns $ExcludePatterns `
-                -RetentionDays $RetentionDays `
-                -ArchiveBeforeDelete $ArchiveBeforeDelete `
-                -ArchivePath $ArchivePath `
-                -DryRun $DryRun `
-                -LogFile $LogFile
+# Wait for all parallel jobs to complete
+if ($Parallel) {
+    Get-Job | ForEach-Object {
+        try {
+            $jobResult = Wait-Job -Job $_ -ErrorAction Stop | Receive-Job -ErrorAction Stop
+            Write-Log "Job completed successfully: $($_.Id)" -Level "INFO" -LogFile $LogFile
+            $jobResult
+        } catch {
+            Write-Log "Failed to complete job $_. Error: $_" -Level "ERROR" -LogFile $LogFile
+        } finally {
+            Remove-Job -Job $_ -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Write-Log "Housekeeping completed." -Level "INFO" -LogFile $LogFile
