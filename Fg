@@ -153,6 +153,7 @@ foreach ($pathConfig in $sortedPaths) {
                 $DryRun,
                 $LogFile
             )
+            
             # Include Write-Log function here
             function Write-Log {
                 param (
