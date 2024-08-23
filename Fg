@@ -105,8 +105,8 @@ foreach ($pathConfig in $sortedPaths) {
     $archiveBeforeDelete = [bool]$pathConfig.ArchiveBeforeDelete
     $archivePath = $pathConfig.ArchivePath
 
-    # Check if rule is enabled
-    if ($enabled -eq $false) {
+    # Explicitly check if rule is enabled
+    if (-not $enabled) {
         Write-Log "Skipping disabled rule for path: $path" -Level "INFO" -LogFile $LogFile
         continue
     }
