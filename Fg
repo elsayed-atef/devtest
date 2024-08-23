@@ -244,10 +244,18 @@ if ($heapdumpConfig.Enabled -eq "true") {
 # Wait for all jobs to finish
 if ($Parallel) {
     if ($jobs.Count -gt 0) {
-        $jobs | Wait-Job | Receive-Job | Remove-Job
+        $jobs | ForEach-Object {
+            try {
+                Wait-Job -Job $_ -ErrorAction Stop | Receive-Job -ErrorAction Stop
+            } catch {
+                Write-Log "Failed to complete job $_. Error: $_" -Level "ERROR"
+            } finally {
+                Remove-Job -Job $_ -ErrorAction SilentlyContinue
+            }
+        }
     }
 }
 
-Write-Log "Housekeeping completed." -Level "INFO" -LogFile $LogFile
+Write-Log "Housekeeping completed." -Level "INFO"
 
 Stop-Transcript
