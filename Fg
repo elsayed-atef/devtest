@@ -5,12 +5,6 @@ param (
     [string]$LogFile = "D:\data\temp\housekeeping.log"
 )
 
-# Import the XML configuration
-$xmlConfig = [xml](Get-Content $ConfigFile)
-
-# Mutex for log file access synchronization
-$logMutex = New-Object System.Threading.Mutex($false, "Global\HousekeepingLogMutex")
-
 # Function to write to logfile only
 function Write-Log {
     param (
@@ -28,6 +22,10 @@ function Write-Log {
         $logMutex.ReleaseMutex()
     }
 }
+
+# Initialize the log file
+$logMutex = New-Object System.Threading.Mutex($false, "Global\HousekeepingLogMutex")
+Start-Transcript -Path $LogFile -Append -ErrorAction SilentlyContinue
 
 # Function to perform cleanup
 function Perform-Cleanup {
@@ -97,6 +95,9 @@ function Perform-Cleanup {
     $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
     Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO"
 }
+
+# Import the XML configuration
+$xmlConfig = [xml](Get-Content $ConfigFile)
 
 # Sort paths to ensure subfolders are processed before parent folders
 $sortedPaths = $xmlConfig.Housekeeping.Paths.Path | Sort-Object -Property { $_.Path.Length } -Descending
@@ -259,6 +260,11 @@ if ($Parallel) {
     }
 }
 
-Write-Log "Housekeeping completed." -Level "INFO"
+# Stop transcription if started
+try {
+    Stop-Transcript -ErrorAction Stop
+} catch {
+    Write-Log "Error stopping transcription. Error: $_" -Level "ERROR"
+}
 
-Stop-Transcript
+Write-Log "Housekeeping completed." -Level "INFO"
