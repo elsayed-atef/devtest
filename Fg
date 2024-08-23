@@ -88,7 +88,23 @@ function Perform-Cleanup {
 }
 
 # Import the XML configuration
-$xmlConfig = [xml](Get-Content $ConfigFile)
+[xml]$xmlConfig = Get-Content $ConfigFile
+
+# Function to parse the Enabled flag
+function Get-EnabledStatus {
+    param (
+        [string]$EnabledValue
+    )
+
+    if ($EnabledValue -eq "true") {
+        return $true
+    } elseif ($EnabledValue -eq "false") {
+        return $false
+    } else {
+        Write-Log "Invalid Enabled value: $EnabledValue" -Level "ERROR" -LogFile $LogFile
+        return $false
+    }
+}
 
 # Sort paths to ensure subfolders are processed before parent folders
 $sortedPaths = $xmlConfig.Housekeeping.Paths.Path | Sort-Object -Property { $_.Path.Length } -Descending
@@ -98,7 +114,7 @@ $jobs = @()
 # Process each path configuration
 foreach ($pathConfig in $sortedPaths) {
     $path = $pathConfig.Path
-    $enabled = [bool]$pathConfig.Enabled
+    $enabled = Get-EnabledStatus $pathConfig.Enabled
     $includeSubfolders = [bool]$pathConfig.IncludeSubfolders
     $excludePatterns = $pathConfig.ExcludePatterns.Pattern
     $retentionDays = [int]$pathConfig.RetentionDays
