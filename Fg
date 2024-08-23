@@ -100,31 +100,12 @@ function Perform-Cleanup {
 # Import the XML configuration
 [xml]$xmlConfig = Get-Content $ConfigFile
 
-# Function to parse the Enabled flag
-function Get-EnabledStatus {
-    param (
-        [string]$EnabledValue
-    )
-
-    if ($EnabledValue -eq "true") {
-        return $true
-    } elseif ($EnabledValue -eq "false") {
-        return $false
-    } else {
-        Write-Log "Invalid Enabled value: $EnabledValue" -Level "ERROR" -LogFile $LogFile
-        return $false
-    }
-}
-
-# Sort paths to ensure subfolders are processed before parent folders
-$sortedPaths = $xmlConfig.Housekeeping.Paths.Path | Sort-Object -Property { $_.Path.Length } -Descending
-
 $jobs = @()
 
 # Process each path configuration
-foreach ($pathConfig in $sortedPaths) {
+foreach ($pathConfig in $xmlConfig.Housekeeping.Paths.Path) {
     $path = $pathConfig.Path
-    $enabled = Get-EnabledStatus $pathConfig.Enabled
+    $enabled = $pathConfig.Enabled -eq "true"
     $includeSubfolders = [bool]$pathConfig.IncludeSubfolders
     $excludePatterns = $pathConfig.ExcludePatterns.Pattern
     $retentionDays = [int]$pathConfig.RetentionDays
@@ -135,26 +116,18 @@ foreach ($pathConfig in $sortedPaths) {
     Write-Log "Processing path: $path" -Level "DEBUG" -LogFile $LogFile
     Write-Log "Enabled flag for $path is set to $enabled" -Level "DEBUG" -LogFile $LogFile
 
-    # Explicitly check if rule is enabled
     if (-not $enabled) {
         Write-Log "Skipping disabled rule for path: $path" -Level "INFO" -LogFile $LogFile
         continue
     }
 
     if ($Parallel) {
-        $scriptBlock = {
+        $job = Start-Job -ScriptBlock {
             param (
-                $Path,
-                $IncludeSubfolders,
-                $ExcludePatterns,
-                $RetentionDays,
-                $ArchiveBeforeDelete,
-                $ArchivePath,
-                $DryRun,
-                $LogFile
+                $Path, $IncludeSubfolders, $ExcludePatterns, $RetentionDays, $ArchiveBeforeDelete, $ArchivePath, $DryRun, $LogFile
             )
-            
-            # Include Write-Log function here
+
+            # Inline functions for logging and cleanup
             function Write-Log {
                 param (
                     [string]$Message,
@@ -165,7 +138,6 @@ foreach ($pathConfig in $sortedPaths) {
                 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                 $logMessage = "$timestamp [$Level] $Message"
 
-                # Acquire the lock before writing to the log file
                 [System.Threading.Monitor]::Enter($global:logLock)
                 try {
                     Add-Content -Path $LogFile -Value $logMessage -ErrorAction Stop
@@ -174,7 +146,6 @@ foreach ($pathConfig in $sortedPaths) {
                 }
             }
 
-            # Include Perform-Cleanup function here
             function Perform-Cleanup {
                 param (
                     [string]$Path,
@@ -189,10 +160,7 @@ foreach ($pathConfig in $sortedPaths) {
 
                 Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -Level "INFO" -LogFile $LogFile
 
-                # Calculate retention date
                 $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
-
-                # Get files to delete
                 $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | 
                          Where-Object { $_.LastWriteTime -lt $RetentionDate }
 
@@ -210,7 +178,6 @@ foreach ($pathConfig in $sortedPaths) {
                     return
                 }
 
-                # Archive files if required
                 if ($ArchiveBeforeDelete -and $ArchivePath) {
                     Write-Log "Archiving files before deletion to $ArchivePath." -Level "INFO" -LogFile $LogFile
                     foreach ($file in $files) {
@@ -225,11 +192,9 @@ foreach ($pathConfig in $sortedPaths) {
                     }
                 }
 
-                # Report before deletion
                 $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
                 Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -Level "INFO" -LogFile $LogFile
 
-                # Delete files
                 $deletedCount = 0
                 foreach ($file in $files) {
                     Remove-Item -Path $file.FullName -Force -ErrorAction Stop
@@ -237,7 +202,6 @@ foreach ($pathConfig in $sortedPaths) {
                     $deletedCount++
                 }
 
-                # Report after deletion
                 Write-Log "Deleted $deletedCount files." -Level "INFO" -LogFile $LogFile
                 $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
                 Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO" -LogFile $LogFile
@@ -250,9 +214,8 @@ foreach ($pathConfig in $sortedPaths) {
                             -ArchivePath $ArchivePath `
                             -DryRun $DryRun `
                             -LogFile $LogFile
-        }
+        } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
 
-        $job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
         $jobs += $job
     } else {
         Perform-Cleanup -Path $path -IncludeSubfolders $includeSubfolders `
