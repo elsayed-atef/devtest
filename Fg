@@ -5,6 +5,9 @@ param (
     [string]$LogFile = "D:\data\temp\housekeeping.log"
 )
 
+# Global lock object for logging
+$global:logLock = [System.Object]::new()
+
 # Function to write logs
 function Write-Log {
     param (
@@ -15,7 +18,14 @@ function Write-Log {
 
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logMessage = "$timestamp [$Level] $Message"
-    Add-Content -Path $LogFile -Value $logMessage -ErrorAction Stop
+
+    # Acquire the lock before writing to the log file
+    [System.Threading.Monitor]::Enter($global:logLock)
+    try {
+        Add-Content -Path $LogFile -Value $logMessage -ErrorAction Stop
+    } finally {
+        [System.Threading.Monitor]::Exit($global:logLock)
+    }
 }
 
 # Function to perform cleanup
@@ -131,8 +141,6 @@ foreach ($pathConfig in $sortedPaths) {
         continue
     }
 
-    $tempLogFile = "$LogFile.$([System.Guid]::NewGuid()).log"
-
     if ($Parallel) {
         $job = Start-Job -ScriptBlock {
             param (
@@ -143,8 +151,7 @@ foreach ($pathConfig in $sortedPaths) {
                 $ArchiveBeforeDelete,
                 $ArchivePath,
                 $DryRun,
-                $LogFile,
-                $TempLogFile
+                $LogFile
             )
             # Include Write-Log function here
             function Write-Log {
@@ -156,7 +163,14 @@ foreach ($pathConfig in $sortedPaths) {
 
                 $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
                 $logMessage = "$timestamp [$Level] $Message"
-                Add-Content -Path $LogFile -Value $logMessage -ErrorAction Stop
+
+                # Acquire the lock before writing to the log file
+                [System.Threading.Monitor]::Enter($global:logLock)
+                try {
+                    Add-Content -Path $LogFile -Value $logMessage -ErrorAction Stop
+                } finally {
+                    [System.Threading.Monitor]::Exit($global:logLock)
+                }
             }
 
             # Include Perform-Cleanup function here
@@ -234,8 +248,8 @@ foreach ($pathConfig in $sortedPaths) {
                             -ArchiveBeforeDelete $ArchiveBeforeDelete `
                             -ArchivePath $ArchivePath `
                             -DryRun $DryRun `
-                            -LogFile $TempLogFile
-        } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile, $tempLogFile
+                            -LogFile $LogFile
+        } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
 
         $jobs += $job
     } else {
@@ -245,7 +259,7 @@ foreach ($pathConfig in $sortedPaths) {
                         -ArchiveBeforeDelete $archiveBeforeDelete `
                         -ArchivePath $archivePath `
                         -DryRun $DryRun `
-                        -LogFile $tempLogFile
+                        -LogFile $LogFile
     }
 }
 
@@ -255,15 +269,14 @@ $heapdumpPath = $heapdumpConfig.Path
 $heapdumpRetentionDays = [int]$heapdumpConfig.RetentionDays
 
 if ($heapdumpConfig.Enabled -eq "true") {
-    $tempLogFile = "$LogFile.$([System.Guid]::NewGuid()).log"
-    Write-Log "Performing heapdump cleanup for path: $heapdumpPath with retention period: $heapdumpRetentionDays days." -Level "INFO" -LogFile $tempLogFile
+    Write-Log "Performing heapdump cleanup for path: $heapdumpPath with retention period: $heapdumpRetentionDays days." -Level "INFO" -LogFile $LogFile
     Perform-Cleanup -Path $heapdumpPath -IncludeSubfolders $false `
                     -ExcludePatterns @() `
                     -RetentionDays $heapdumpRetentionDays `
                     -ArchiveBeforeDelete $false `
                     -ArchivePath "" `
                     -DryRun $DryRun `
-                    -LogFile $tempLogFile
+                    -LogFile $LogFile
 }
 
 # Wait for all jobs to finish and merge logs
@@ -274,14 +287,6 @@ if ($Parallel) {
                 $jobResult = Wait-Job -Job $_ -ErrorAction Stop | Receive-Job -ErrorAction Stop
                 Write-Log "Job completed successfully: $($_.Id)" -Level "INFO" -LogFile $LogFile
                 $jobResult
-                # Check if the temp log file exists before attempting to merge it
-                $tempLogFile = "$LogFile.$($_.Id).log"
-                if (Test-Path $tempLogFile) {
-                    Get-Content $tempLogFile | Add-Content -Path $LogFile
-                    Remove-Item $tempLogFile -Force
-                } else {
-                    Write-Log "Temp log file $tempLogFile not found." -Level "ERROR" -LogFile $LogFile
-                }
             } catch {
                 Write-Log "Failed to complete job $_. Error: $_" -Level "ERROR" -LogFile $LogFile
             } finally {
