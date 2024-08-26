@@ -19,18 +19,29 @@ function Is-In-PeakHours {
     )
 
     foreach ($range in $timeRanges) {
-        try {
-            $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
-            $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
+        $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
+        $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
 
-            # Log parsed time ranges
-            Log-Message -Level "Debug" -Message "Parsed time range: Start $($startTime.ToString("HH:mm:ss")), End $($endTime.ToString("HH:mm:ss"))"
+        Log-Message -Level "Debug" -Message "Checking time range Start: $($startTime.ToString('HH:mm:ss')), End: $($endTime.ToString('HH:mm:ss'))"
 
-            if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
-                return $true
-            }
-        } catch {
-            Log-Message -Level "Error" -Message "Failed to parse time range. Start: $($range.Start), End: $($range.End). Error: $_"
+        if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
+            return $true
+        }
+    }
+    return $false
+}
+
+# Function to Check if Folder Name Matches Exclude Patterns
+function Is-Excluded {
+    param (
+        [string]$folderName,
+        [array]$patterns
+    )
+
+    foreach ($pattern in $patterns) {
+        if ($folderName -match [regex]::Escape($pattern)) {
+            Log-Message -Level "Debug" -Message "Folder '$folderName' matches exclude pattern '$pattern'."
+            return $true
         }
     }
     return $false
@@ -46,63 +57,54 @@ function Perform-Housekeeping {
     foreach ($folder in $config.HousekeepingConfig.Paths.Path) {
         $path = $folder.Location
         $retentionDays = [int]$folder.RetentionDays
-        $includeSubfolders = [bool]($folder.IncludeSubfolders -eq "true")
-        $archiveEnabled = [bool]($folder.Archive.Enabled -eq "true")
+        $includeSubfolders = [bool]$folder.IncludeSubfolders
+        $archiveEnabled = [bool]$folder.Archive.Enabled
         $archivePath = $folder.Archive.Path
+        $excludePatterns = $folder.ExcludePatterns.Pattern | ForEach-Object { $_ }
+        $deleteIfEmpty = [bool]$folder.DeleteIfEmpty
 
-        # Log folder processing details
         Log-Message -Level "Info" -Message "Processing folder: $path"
         Log-Message -Level "Debug" -Message "Retention Days: $retentionDays"
         Log-Message -Level "Debug" -Message "Include Subfolders: $includeSubfolders"
         Log-Message -Level "Debug" -Message "Archive Enabled: $archiveEnabled"
         Log-Message -Level "Debug" -Message "Archive Path: $archivePath"
-        
-        # Log Exclude Patterns
-        $excludePatterns = $folder.ExcludePatterns.Pattern
         Log-Message -Level "Debug" -Message "Exclude Patterns: $($excludePatterns -join ', ')"
+        Log-Message -Level "Debug" -Message "Delete If Empty: $deleteIfEmpty"
 
-        # Get files and apply retention policy
-        $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
+        $items = Get-ChildItem -Path $path -Recurse:$includeSubfolders
 
-        foreach ($file in $files) {
-            # Check if the file matches the exclude patterns
-            $shouldExclude = $false
-            foreach ($pattern in $excludePatterns) {
-                if ($file.Name -like "*$pattern*") {
-                    $shouldExclude = $true
-                    Log-Message -Level "Info" -Message "Excluding file: $($file.FullName) based on pattern $pattern"
-                    break
-                }
-            }
+        foreach ($item in $items) {
+            $itemAge = (Get-Date) - $item.LastWriteTime
+            $itemPath = $item.FullName
 
-            if ($shouldExclude) {
+            # Check if the item should be excluded
+            if (Is-Excluded -folderName $item.Name -patterns $excludePatterns) {
+                Log-Message -Level "Info" -Message "Skipping excluded item: $itemPath"
                 continue
             }
 
-            $fileAge = (Get-Date) - $file.LastWriteTime
-
-            if ($fileAge.Days -gt $retentionDays) {
+            if ($itemAge.Days -gt $retentionDays) {
                 if ($DryRun) {
-                    Log-Message -Level "Info" -Message "Dry Run: Would delete $($file.FullName)"
+                    Log-Message -Level "Info" -Message "Dry Run: Would delete $itemPath"
                 } else {
-                    Log-Message -Level "Info" -Message "Deleting $($file.FullName)"
-                    Remove-Item -Path $file.FullName -Force
+                    Log-Message -Level "Info" -Message "Deleting $itemPath"
+                    Remove-Item -Path $itemPath -Force
                 }
 
                 if ($archiveEnabled) {
                     if ($DryRun) {
-                        Log-Message -Level "Info" -Message "Dry Run: Would archive $($file.FullName) to $archivePath"
+                        Log-Message -Level "Info" -Message "Dry Run: Would archive $itemPath to $archivePath"
                     } else {
-                        $archiveFile = Join-Path -Path $archivePath -ChildPath $file.Name
-                        Log-Message -Level "Info" -Message "Archiving $($file.FullName) to $archiveFile"
-                        Move-Item -Path $file.FullName -Destination $archiveFile
+                        $archiveFile = Join-Path -Path $archivePath -ChildPath $item.Name
+                        Log-Message -Level "Info" -Message "Archiving $itemPath to $archiveFile"
+                        Move-Item -Path $itemPath -Destination $archiveFile
                     }
                 }
             }
         }
 
         # Check if the folder is empty and delete if necessary
-        if ($folder.DeleteIfEmpty -and (Get-ChildItem -Path $path).Count -eq 0) {
+        if ($deleteIfEmpty -and (Get-ChildItem -Path $path).Count -eq 0) {
             if ($DryRun) {
                 Log-Message -Level "Info" -Message "Dry Run: Would delete empty folder $path"
             } else {
@@ -122,22 +124,16 @@ while ($true) {
     $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
     $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
     $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
-    $DryRun = [bool]($config.HousekeepingConfig.Settings.DryRun -eq "true")
-
-    # Log extracted settings
-    Log-Message -Level "Debug" -Message "LogFilePath: $LogFilePath"
-    Log-Message -Level "Debug" -Message "MaxLogSizeMB: $MaxLogSizeMB"
-    Log-Message -Level "Debug" -Message "CleanupIntervalHours: $cleanupIntervalHours"
-    Log-Message -Level "Debug" -Message "DryRun: $DryRun"
+    $DryRun = [bool]$config.HousekeepingConfig.Settings.DryRun
 
     # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
     $currentTime = Get-Date
-    $peakHoursEnabled = [bool]($config.HousekeepingConfig.Settings.PeakHours.Enabled -eq "true")
-    $sleepUntilPeakHoursEnd = [bool]($config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd -eq "true")
+    $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
+    $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
     $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
     Log-Message -Level "Debug" -Message "Peak Hours Enabled: $peakHoursEnabled"
-    Log-Message -Level "Debug" -Message "Sleep Until End: $sleepUntilPeakHoursEnd"
+    Log-Message -Level "Debug" -Message "Sleep Until Peak Hours End: $sleepUntilPeakHoursEnd"
 
     if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
         if ($sleepUntilPeakHoursEnd) {
@@ -151,7 +147,7 @@ while ($true) {
                 $endTimePeak = [datetime]::ParseExact($endPeakHours.End, "HH:mm", $null)
                 $sleepTime = ($endTimePeak.TimeOfDay - $currentTime.TimeOfDay).TotalMinutes
                 Log-Message -Level "Info" -Message "Sleeping until peak hours end. Sleeping for $sleepTime minutes."
-                Start-Sleep -Seconds ([math]::Round($sleepTime * 60))
+                Start-Sleep -Minutes $sleepTime
                 continue
             }
         }
