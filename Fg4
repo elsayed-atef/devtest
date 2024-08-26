@@ -26,19 +26,19 @@ function Is-In-PeakHours {
             $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null).TimeOfDay
             $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null).TimeOfDay
 
-            Log-Message -Level "Info" -Message "Parsed time range start: $startTime, end: $endTime"
+            Log-Message -Level "Debug" -Message "Parsed time range start: $startTime, end: $endTime"
 
             # Check for time range crossing midnight
             if ($endTime -lt $startTime) {
                 # Time range crosses midnight
                 if ($currentTime.TimeOfDay -ge $startTime -or $currentTime.TimeOfDay -lt $endTime) {
-                    Log-Message -Level "Info" -Message "Current time is within peak hours range (crosses midnight)."
+                    Log-Message -Level "Debug" -Message "Current time is within peak hours range (crosses midnight)."
                     return $true
                 }
             } else {
                 # Normal time range
                 if ($currentTime.TimeOfDay -ge $startTime -and $currentTime.TimeOfDay -lt $endTime) {
-                    Log-Message -Level "Info" -Message "Current time is within peak hours range."
+                    Log-Message -Level "Debug" -Message "Current time is within peak hours range."
                     return $true
                 }
             }
@@ -46,7 +46,7 @@ function Is-In-PeakHours {
             Log-Message -Level "Error" -Message "Failed to parse time. Error: $($_.Exception.Message). Start: $($range.Start), End: $($range.End)"
         }
     }
-    Log-Message -Level "Info" -Message "Current time is outside all peak hours ranges."
+    Log-Message -Level "Debug" -Message "Current time is outside all peak hours ranges."
     return $false
 }
 
@@ -64,7 +64,8 @@ function Perform-Housekeeping {
         $archiveEnabled = [bool]$folder.Archive.Enabled
         $archivePath = $folder.Archive.Path
 
-        Log-Message -Level "Info" -Message "Processing folder: $path"
+        Log-Message -Level "Debug" -Message "Processing folder: $path"
+        Log-Message -Level "Debug" -Message "RetentionDays: $retentionDays, IncludeSubfolders: $includeSubfolders, ArchiveEnabled: $archiveEnabled, ArchivePath: $archivePath"
 
         if (-Not (Test-Path -Path $path)) {
             Log-Message -Level "Error" -Message "Path not found: $path"
@@ -74,15 +75,17 @@ function Perform-Housekeeping {
         $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
 
         if ($files.Count -eq 0) {
-            Log-Message -Level "Info" -Message "No files found in $path"
+            Log-Message -Level "Debug" -Message "No files found in $path"
         }
 
         foreach ($file in $files) {
             $fileAge = (Get-Date) - $file.LastWriteTime
 
+            Log-Message -Level "Debug" -Message "Processing file: $($file.FullName), Age: $($fileAge.Days) days"
+
             if ($fileAge.Days -gt $retentionDays) {
                 if ($DryRun) {
-                    Log-Message -Level "Info" -Message "Dry Run: Would delete $file"
+                    Log-Message -Level "Debug" -Message "Dry Run: Would delete $file"
                 } else {
                     Log-Message -Level "Info" -Message "Deleting $file"
                     Remove-Item -Path $file.FullName -Force
@@ -90,7 +93,7 @@ function Perform-Housekeeping {
 
                 if ($archiveEnabled) {
                     if ($DryRun) {
-                        Log-Message -Level "Info" -Message "Dry Run: Would archive $file to $archivePath"
+                        Log-Message -Level "Debug" -Message "Dry Run: Would archive $file to $archivePath"
                     } else {
                         $archiveFile = Join-Path -Path $archivePath -ChildPath $file.Name
                         Log-Message -Level "Info" -Message "Archiving $file to $archivePath"
@@ -103,7 +106,7 @@ function Perform-Housekeeping {
         # Check if the folder is empty and delete if necessary
         if ($folder.DeleteIfEmpty -and (Get-ChildItem -Path $path).Count -eq 0) {
             if ($DryRun) {
-                Log-Message -Level "Info" -Message "Dry Run: Would delete empty folder $path"
+                Log-Message -Level "Debug" -Message "Dry Run: Would delete empty folder $path"
             } else {
                 Log-Message -Level "Info" -Message "Deleting empty folder $path"
                 Remove-Item -Path $path -Recurse
@@ -138,9 +141,9 @@ while ($true) {
 
     $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
-    Log-Message -Level "Info" -Message "Peak hours enabled: $peakHoursEnabled"
-    Log-Message -Level "Info" -Message "Sleep until peak hours end: $sleepUntilPeakHoursEnd"
-    Log-Message -Level "Info" -Message "Configured time ranges: $($timeRanges | ForEach-Object { "$($_.Start) to $($_.End)" })"
+    Log-Message -Level "Debug" -Message "Peak hours enabled: $peakHoursEnabled"
+    Log-Message -Level "Debug" -Message "Sleep until peak hours end: $sleepUntilPeakHoursEnd"
+    Log-Message -Level "Debug" -Message "Configured time ranges: $($timeRanges | ForEach-Object { "$($_.Start) to $($_.End)" })"
 
     # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
     $currentTime = Get-Date
