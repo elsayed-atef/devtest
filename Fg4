@@ -86,47 +86,45 @@ function Perform-Housekeeping {
             # Log the Start of Housekeeping for a Specific Path
             Log-Message -Level "Info" -Message "Starting housekeeping for $path with retention of $retentionDays days."
 
-            # Get Files to Cleanup, Prioritize Large Files if Enabled
-            $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders | Where-Object {
-                $_.LastWriteTime -lt (Get-Date).AddDays(-$retentionDays) -and
-                -not (Is-Excluded -path $_.FullName -patterns $excludePatterns)
-            }
+            # Get Current Date for Comparison
+            $currentDate = Get-Date
 
-            if ($prioritizeLargeFiles) {
-                $files = $files | Sort-Object Length -Descending
-            }
+            # Get Files and Folders to Cleanup
+            $items = Get-ChildItem -Path $path -Recurse:$includeSubfolders
 
-            foreach ($file in $files) {
-                if ($interactiveMode -and -not $DryRun) {
-                    $response = Read-Host "Do you want to delete $($file.FullName)? (Y/N)"
-                    if ($response -ne 'Y') {
-                        Log-Message -Level "Info" -Message "Skipped file $($file.FullName)."
-                        continue
-                    }
+            foreach ($item in $items) {
+                # Skip excluded items
+                if (Is-Excluded -path $item.FullName -patterns $excludePatterns) {
+                    continue
                 }
 
-                if ($DryRun) {
-                    Log-Message -Level "Debug" -Message "Dry Run: Would delete file $($file.FullName)."
-                    if ($archiveBeforeDelete) {
-                        Log-Message -Level "Debug" -Message "Dry Run: Would archive file $($file.FullName) to $archivePath\$($file.Name).zip."
-                    } else {
-                        Log-Message -Level "Debug" -Message "Dry Run: Archiving is disabled; no archive action will be taken."
-                    }
-                } else {
-                    if ($archiveBeforeDelete) {
-                        if (-not (Test-Path $archivePath)) {
-                            New-Item -ItemType Directory -Path $archivePath | Out-Null
-                        }
-                        $zipPath = Join-Path -Path $archivePath -ChildPath "$($file.Name).zip"
-                        Compress-Archive -Path $file.FullName -DestinationPath $zipPath
-                        Log-Message -Level "Info" -Message "Archived file $($file.FullName) to $zipPath."
-                    } else {
-                        Log-Message -Level "Info" -Message "Archiving is disabled for this path, skipping archive step."
-                    }
+                # Determine if the item should be deleted based on retention policy
+                $itemAgeDays = ($currentDate - $item.LastWriteTime).Days
+                if ($item.PSIsContainer) {
+                    # For folders, use the LastAccessTime property if specified
+                    $itemAgeDays = ($currentDate - $item.LastAccessTime).Days
+                }
 
-                    # Delete the file
-                    Remove-Item $file.FullName -Force
-                    Log-Message -Level "Info" -Message "Deleted file $($file.FullName)."
+                if ($itemAgeDays -ge $retentionDays) {
+                    if ($DryRun) {
+                        Log-Message -Level "Debug" -Message "Dry Run: Would delete item $($item.FullName)."
+                        if ($archiveBeforeDelete) {
+                            Log-Message -Level "Debug" -Message "Dry Run: Would archive item $($item.FullName) to $archivePath\$($item.Name).zip."
+                        }
+                    } else {
+                        if ($archiveBeforeDelete) {
+                            if (-not (Test-Path $archivePath)) {
+                                New-Item -ItemType Directory -Path $archivePath | Out-Null
+                            }
+                            $zipPath = Join-Path -Path $archivePath -ChildPath "$($item.Name).zip"
+                            Compress-Archive -Path $item.FullName -DestinationPath $zipPath
+                            Log-Message -Level "Info" -Message "Archived item $($item.FullName) to $zipPath."
+                        }
+
+                        # Delete the item
+                        Remove-Item $item.FullName -Force
+                        Log-Message -Level "Info" -Message "Deleted item $($item.FullName)."
+                    }
                 }
             }
 
