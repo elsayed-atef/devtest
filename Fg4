@@ -8,7 +8,6 @@ param (
 # Extract Global Settings
 $logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
 $maxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
-$interactiveMode = [bool]$config.HousekeepingConfig.Settings.InteractiveMode
 
 # Function to Log Messages with Timestamp and Log Level
 function Log-Message {
@@ -65,7 +64,7 @@ function Convert-XmlBoolean {
     return $xmlValue -eq "true"
 }
 
-# Function to Perform Housekeeping with Retry Logic
+# Function to Perform Housekeeping
 function Perform-Housekeeping {
     param (
         [string]$path,
@@ -73,74 +72,53 @@ function Perform-Housekeeping {
         [bool]$includeSubfolders,
         [bool]$archiveBeforeDelete,
         [string]$archivePath,
-        [bool]$prioritizeLargeFiles,
         [string[]]$excludePatterns
     )
 
-    # Retry logic for transient errors
-    $retryCount = 3
-    $retryDelay = 5
+    # Get Current Date for Comparison
+    $currentDate = Get-Date
 
-    for ($i = 0; $i -lt $retryCount; $i++) {
-        try {
-            # Log the Start of Housekeeping for a Specific Path
-            Log-Message -Level "Info" -Message "Starting housekeeping for $path with retention of $retentionDays days."
+    # Get Files and Folders to Cleanup
+    $items = Get-ChildItem -Path $path -Recurse:$includeSubfolders
 
-            # Get Current Date for Comparison
-            $currentDate = Get-Date
+    foreach ($item in $items) {
+        # Skip excluded items
+        if (Is-Excluded -path $item.FullName -patterns $excludePatterns) {
+            continue
+        }
 
-            # Get Files and Folders to Cleanup
-            $items = Get-ChildItem -Path $path -Recurse:$includeSubfolders
+        # Determine the item age in days
+        if ($item.PSIsContainer) {
+            $itemAgeDays = ($currentDate - $item.LastAccessTime).Days
+        } else {
+            $itemAgeDays = ($currentDate - $item.LastWriteTime).Days
+        }
 
-            foreach ($item in $items) {
-                # Skip excluded items
-                if (Is-Excluded -path $item.FullName -patterns $excludePatterns) {
-                    continue
+        if ($itemAgeDays -ge $retentionDays) {
+            if ($DryRun) {
+                Log-Message -Level "Debug" -Message "Dry Run: Would delete item $($item.FullName)."
+                if ($archiveBeforeDelete) {
+                    Log-Message -Level "Debug" -Message "Dry Run: Would archive item $($item.FullName) to $archivePath\$($item.Name).zip."
                 }
-
-                # Determine if the item should be deleted based on retention policy
-                $itemAgeDays = ($currentDate - $item.LastWriteTime).Days
-                if ($item.PSIsContainer) {
-                    # For folders, use the LastAccessTime property if specified
-                    $itemAgeDays = ($currentDate - $item.LastAccessTime).Days
-                }
-
-                if ($itemAgeDays -ge $retentionDays) {
-                    if ($DryRun) {
-                        Log-Message -Level "Debug" -Message "Dry Run: Would delete item $($item.FullName)."
-                        if ($archiveBeforeDelete) {
-                            Log-Message -Level "Debug" -Message "Dry Run: Would archive item $($item.FullName) to $archivePath\$($item.Name).zip."
-                        }
-                    } else {
-                        if ($archiveBeforeDelete) {
-                            if (-not (Test-Path $archivePath)) {
-                                New-Item -ItemType Directory -Path $archivePath | Out-Null
-                            }
-                            $zipPath = Join-Path -Path $archivePath -ChildPath "$($item.Name).zip"
-                            Compress-Archive -Path $item.FullName -DestinationPath $zipPath
-                            Log-Message -Level "Info" -Message "Archived item $($item.FullName) to $zipPath."
-                        }
-
-                        # Delete the item
-                        Remove-Item $item.FullName -Force
-                        Log-Message -Level "Info" -Message "Deleted item $($item.FullName)."
-                    }
-                }
-            }
-
-            # Log Completion of Housekeeping for the Path
-            Log-Message -Level "Info" -Message "Completed housekeeping for $path."
-            return
-        } catch {
-            Log-Message -Level "Error" -Message "Error during housekeeping for $path: $_. Exception: $_.Exception.Message"
-            if ($i -lt ($retryCount - 1)) {
-                Log-Message -Level "Info" -Message "Retrying in $retryDelay seconds..."
-                Start-Sleep -Seconds $retryDelay
             } else {
-                Log-Message -Level "Error" -Message "Failed after $retryCount attempts. Skipping path $path."
+                if ($archiveBeforeDelete) {
+                    if (-not (Test-Path $archivePath)) {
+                        New-Item -ItemType Directory -Path $archivePath | Out-Null
+                    }
+                    $zipPath = Join-Path -Path $archivePath -ChildPath "$($item.Name).zip"
+                    Compress-Archive -Path $item.FullName -DestinationPath $zipPath
+                    Log-Message -Level "Info" -Message "Archived item $($item.FullName) to $zipPath."
+                }
+
+                # Delete the item
+                Remove-Item $item.FullName -Force
+                Log-Message -Level "Info" -Message "Deleted item $($item.FullName)."
             }
         }
     }
+
+    # Log Completion of Housekeeping for the Path
+    Log-Message -Level "Info" -Message "Completed housekeeping for $path."
 }
 
 # Performance Monitoring
@@ -156,7 +134,6 @@ Log-Message -Level "Info" -Message "Housekeeping script started."
 foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
     $includeSubfolders = Convert-XmlBoolean -xmlValue $pathConfig.IncludeSubfolders
     $archiveBeforeDelete = Convert-XmlBoolean -xmlValue $pathConfig.ArchiveBeforeDelete
-    $prioritizeLargeFiles = Convert-XmlBoolean -xmlValue $pathConfig.PrioritizeLargeFiles
 
     if ($pathConfig.Enabled -eq "true") {
         Perform-Housekeeping -path $pathConfig.Location `
@@ -164,7 +141,6 @@ foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
                             -includeSubfolders $includeSubfolders `
                             -archiveBeforeDelete $archiveBeforeDelete `
                             -archivePath $pathConfig.ArchivePath `
-                            -prioritizeLargeFiles $prioritizeLargeFiles `
                             -excludePatterns $pathConfig.ExcludePatterns.Pattern
     } else {
         Log-Message -Level "Info" -Message "Skipping disabled path $($pathConfig.Location)."
