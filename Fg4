@@ -64,6 +64,32 @@ function Convert-XmlBoolean {
     return $xmlValue -eq "true"
 }
 
+# Function to Check if Current Time is Within Any Peak Hour Range
+function Is-In-PeakHours {
+    param (
+        [DateTime]$currentTime,
+        [array]$timeRanges
+    )
+
+    foreach ($range in $timeRanges) {
+        $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
+        $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
+
+        # Handle cases where end time is on the next day
+        if ($endTime -lt $startTime) {
+            $currentTimeInRange = $currentTime.TimeOfDay -ge $startTime.TimeOfDay -or $currentTime.TimeOfDay -lt $endTime.TimeOfDay
+        } else {
+            $currentTimeInRange = $currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay
+        }
+
+        if ($currentTimeInRange) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 # Function to Perform Housekeeping
 function Perform-Housekeeping {
     param (
@@ -167,6 +193,23 @@ Rotate-Log -logFilePath $logFilePath -maxLogSizeMB $maxLogSizeMB
 # Log the Start of the Housekeeping Script
 Log-Message -Level "Info" -Message "Housekeeping script started."
 
+# Peak Hours Configuration
+$peakHoursEnabled = Convert-XmlBoolean -xmlValue $config.HousekeepingConfig.Settings.PeakHours.Enabled
+$timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange | ForEach-Object {
+    [PSCustomObject]@{
+        Start = $_.Start
+        End = $_.End
+    }
+}
+
+if ($peakHoursEnabled) {
+    $currentTime = Get-Date
+    if (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges) {
+        Log-Message -Level "Info" -Message "Current time is within peak hours. Housekeeping script is paused."
+        exit
+    }
+}
+
 # Loop through each Path in the Configuration
 foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
     $includeSubfolders = Convert-XmlBoolean -xmlValue $pathConfig.IncludeSubfolders
@@ -189,5 +232,4 @@ foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
 # Log the End of the Housekeeping Script
 $endTime = Get-Date
 $executionTime = $endTime - $startTime
-Log-Message -Level "Info" -Message "Housekeeping script completed."
-Log-Message -Level "Info" -Message "Script executed in $($executionTime.TotalSeconds) seconds."
+Log-Message -Level "Info" -Message "Housekeeping script completed. Execution time: $($executionTime.TotalMinutes) minutes."
