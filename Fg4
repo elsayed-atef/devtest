@@ -11,26 +11,6 @@ function Log-Message {
     Add-Content -Path $LogFilePath -Value $logEntry
 }
 
-# Function to Check if Current Time is Within Peak Hours
-function Is-In-PeakHours {
-    param (
-        [datetime]$currentTime,
-        [array]$timeRanges
-    )
-
-    foreach ($range in $timeRanges) {
-        $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
-        $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
-
-        Log-Message -Level "Debug" -Message "Checking time range Start: $($startTime.ToString('HH:mm:ss')), End: $($endTime.ToString('HH:mm:ss'))"
-
-        if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
-            return $true
-        }
-    }
-    return $false
-}
-
 # Function to Check if Folder Name Matches Exclude Patterns
 function Is-Excluded {
     param (
@@ -71,17 +51,22 @@ function Perform-Housekeeping {
         Log-Message -Level "Debug" -Message "Exclude Patterns: $($excludePatterns -join ', ')"
         Log-Message -Level "Debug" -Message "Delete If Empty: $deleteIfEmpty"
 
-        $items = Get-ChildItem -Path $path -Recurse:$includeSubfolders
+        # Retrieve all directories first, and then files if subfolders are included
+        $directories = Get-ChildItem -Path $path -Directory -Recurse:$includeSubfolders
+        $items = $directories | ForEach-Object { Get-ChildItem -Path $_.FullName -File }
 
         foreach ($item in $items) {
-            $itemAge = (Get-Date) - $item.LastWriteTime
-            $itemPath = $item.FullName
+            # Check if the parent folder of the item should be excluded
+            $parentFolder = Split-Path -Path $item.FullName -Parent
+            $parentFolderName = [System.IO.Path]::GetFileName($parentFolder)
 
-            # Check if the item should be excluded
-            if (Is-Excluded -folderName $item.Name -patterns $excludePatterns) {
-                Log-Message -Level "Info" -Message "Skipping excluded item: $itemPath"
+            if (Is-Excluded -folderName $parentFolderName -patterns $excludePatterns) {
+                Log-Message -Level "Info" -Message "Skipping excluded folder: $parentFolder"
                 continue
             }
+
+            $itemAge = (Get-Date) - $item.LastWriteTime
+            $itemPath = $item.FullName
 
             if ($itemAge.Days -gt $retentionDays) {
                 if ($DryRun) {
