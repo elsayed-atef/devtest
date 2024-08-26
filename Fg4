@@ -37,50 +37,47 @@ function Perform-Housekeeping {
 
     foreach ($folder in $config.HousekeepingConfig.Paths.Path) {
         $path = $folder.Location
+        $enabled = [bool]$folder.Enabled
         $retentionDays = [int]$folder.RetentionDays
         $includeSubfolders = [bool]$folder.IncludeSubfolders
         $archiveEnabled = [bool]$folder.Archive.Enabled
         $archivePath = $folder.Archive.Path
-        $excludePatterns = $folder.ExcludePatterns.Pattern
+        $excludePatterns = @($folder.ExcludePatterns.Pattern)
+
+        if (-not $enabled) {
+            Log-Message -Level "Info" -Message "Skipping disabled path: $path"
+            continue
+        }
 
         Log-Message -Level "Info" -Message "Processing folder: $path"
-        Log-Message -Level "Info" -Message "Archive.Enabled: $archiveEnabled, Archive.Path: $archivePath"
-        Log-Message -Level "Info" -Message "ExcludePatterns: $excludePatterns"
+        Log-Message -Level "Debug" -Message "Archive.Enabled: $archiveEnabled, Archive.Path: $archivePath, RetentionDays: $retentionDays, IncludeSubfolders: $includeSubfolders, ExcludePatterns: $($excludePatterns -join ', ')"
 
         $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
 
         foreach ($file in $files) {
+            $fileFullName = $file.FullName
             $fileAge = (Get-Date) - $file.LastWriteTime
-            $exclude = $false
 
-            # Check if file matches any exclude patterns
-            foreach ($pattern in $excludePatterns) {
-                if ($file.FullName -like "*$pattern*") {
-                    Log-Message -Level "Info" -Message "Excluding file $($file.FullName) based on pattern $pattern"
-                    $exclude = $true
-                    break
-                }
-            }
-
-            if ($exclude -eq $true) {
+            if ($excludePatterns -and ($excludePatterns | ForEach-Object { $fileFullName -like "*$_*" })) {
+                Log-Message -Level "Info" -Message "Excluding file due to matching pattern: $fileFullName"
                 continue
             }
 
             if ($fileAge.Days -gt $retentionDays) {
-                if ($DryRun) {
-                    Log-Message -Level "Info" -Message "Dry Run: Would delete $($file.FullName)"
-                } else {
-                    Log-Message -Level "Info" -Message "Deleting $($file.FullName)"
-                    Remove-Item -Path $file.FullName -Force
-                }
-
                 if ($archiveEnabled) {
+                    $archiveFile = Join-Path -Path $archivePath -ChildPath $file.Name
                     if ($DryRun) {
-                        Log-Message -Level "Info" -Message "Dry Run: Would archive $($file.FullName) to $archivePath"
+                        Log-Message -Level "Info" -Message "Dry Run: Would archive $fileFullName to $archiveFile"
                     } else {
-                        $archiveFile = Join-Path -Path $archivePath -ChildPath $file.Name
-                        Log-Message -Level "Info" -Message "Archiving $($file.FullName) to $archivePath"
-                        Move-Item -Path $file.FullName -Destination $archiveFile
+                        Log-Message -Level "Info" -Message "Archiving $fileFullName to $archiveFile"
+                        Move-Item -Path $fileFullName -Destination $archiveFile
+                    }
+                } else {
+                    if ($DryRun) {
+                        Log-Message -Level "Info" -Message "Dry Run: Would delete $fileFullName"
+                    } else {
+                        Log-Message -Level "Info" -Message "Deleting $fileFullName"
+                        Remove-Item -Path $fileFullName -Force
                     }
                 }
             }
