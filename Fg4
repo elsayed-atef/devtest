@@ -54,6 +54,20 @@ function Perform-Housekeeping {
         $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
 
         foreach ($file in $files) {
+            # Check if the file matches the exclude patterns
+            $shouldExclude = $false
+            foreach ($pattern in $folder.ExcludePatterns.Pattern) {
+                if ($file.Name -like "*$pattern*") {
+                    $shouldExclude = $true
+                    Log-Message -Level "Info" -Message "Excluding file: $($file.FullName) based on pattern $pattern"
+                    break
+                }
+            }
+
+            if ($shouldExclude) {
+                continue
+            }
+
             $fileAge = (Get-Date) - $file.LastWriteTime
 
             if ($fileAge.Days -gt $retentionDays) {
@@ -97,15 +111,15 @@ while ($true) {
     $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
     $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
     $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
-    $DryRun = [bool]$config.HousekeepingConfig.Settings.DryRun
+    $DryRun = [bool]($config.HousekeepingConfig.Settings.DryRun -eq "true")
 
     # Log extracted settings
     Log-Message -Level "Debug" -Message "LogFilePath: $LogFilePath, MaxLogSizeMB: $MaxLogSizeMB, CleanupIntervalHours: $cleanupIntervalHours, DryRun: $DryRun"
 
     # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
     $currentTime = Get-Date
-    $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
-    $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
+    $peakHoursEnabled = [bool]($config.HousekeepingConfig.Settings.PeakHours.Enabled -eq "true")
+    $sleepUntilPeakHoursEnd = [bool]($config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd -eq "true")
     $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
     Log-Message -Level "Debug" -Message "Peak Hours Enabled: $peakHoursEnabled, Sleep Until End: $sleepUntilPeakHoursEnd"
