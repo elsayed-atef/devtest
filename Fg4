@@ -25,6 +25,8 @@ function Is-In-PeakHours {
         try {
             $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null).TimeOfDay
             $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null).TimeOfDay
+            
+            Log-Message -Level "Info" -Message "Parsed time range start: $startTime, end: $endTime"
 
             # Check for time range crossing midnight
             if ($endTime -lt $startTime) {
@@ -39,7 +41,7 @@ function Is-In-PeakHours {
                 }
             }
         } catch {
-            Log-Message -Level "Error" -Message "Failed to parse time: $($_.Exception.Message). Start: $($range.Start), End: $($range.End)"
+            Log-Message -Level "Error" -Message "Failed to parse time. Error: $($_.Exception.Message). Start: $($range.Start), End: $($range.End)"
         }
     }
     return $false
