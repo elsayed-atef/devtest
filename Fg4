@@ -89,10 +89,15 @@ function Perform-Housekeeping {
 
         # Determine the item age in days
         if ($item.PSIsContainer) {
+            # For folders, use LastAccessTime
             $itemAgeDays = ($currentDate - $item.LastAccessTime).Days
         } else {
+            # For files, use LastWriteTime
             $itemAgeDays = ($currentDate - $item.LastWriteTime).Days
         }
+
+        # Log detailed information for debugging
+        Log-Message -Level "Debug" -Message "Item: $($item.FullName), Age: $itemAgeDays days."
 
         if ($itemAgeDays -ge $retentionDays) {
             if ($DryRun) {
