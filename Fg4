@@ -130,7 +130,7 @@ while ($true) {
     $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
     $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
     $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
-    $DryRun = [bool]$config.HousekeepingConfig.Settings.DryRun
+    $DryRun = $config.HousekeepingConfig.Settings.DryRun -eq "true"
 
     # Extract Peak Hours settings
     $peakHoursEnabledRaw = $config.HousekeepingConfig.Settings.PeakHours.Enabled
