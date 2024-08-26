@@ -104,8 +104,12 @@ function Perform-Housekeeping {
                 }
 
                 if ($DryRun) {
-                    Log-Message -Level "Debug" -Message "Dry Run: Would archive file $($file.FullName) to $archivePath\$($file.Name).zip."
                     Log-Message -Level "Debug" -Message "Dry Run: Would delete file $($file.FullName)."
+                    if ($archiveBeforeDelete) {
+                        Log-Message -Level "Debug" -Message "Dry Run: Would archive file $($file.FullName) to $archivePath\$($file.Name).zip."
+                    } else {
+                        Log-Message -Level "Debug" -Message "Dry Run: Archiving is disabled; no archive action will be taken."
+                    }
                 } else {
                     if ($archiveBeforeDelete) {
                         if (-not (Test-Path $archivePath)) {
