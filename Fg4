@@ -27,6 +27,30 @@ function Is-Excluded {
     return $false
 }
 
+# Function to Check if Current Time is Within Peak Hours
+function Is-In-PeakHours {
+    param (
+        [datetime]$currentTime,
+        [array]$timeRanges
+    )
+
+    foreach ($range in $timeRanges) {
+        $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
+        $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
+
+        # Adjust endTime for ranges that cross midnight
+        if ($endTime.TimeOfDay -lt $startTime.TimeOfDay) {
+            $endTime = $endTime.AddDays(1)
+        }
+
+        if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -le $endTime.TimeOfDay) {
+            Log-Message -Level "Debug" -Message "Current time $($currentTime.ToString('HH:mm')) is within peak hours range: Start $($startTime.ToString('HH:mm')), End $($endTime.ToString('HH:mm'))."
+            return $true
+        }
+    }
+    return $false
+}
+
 # Function to Perform Housekeeping Tasks
 function Perform-Housekeeping {
     param (
