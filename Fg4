@@ -22,8 +22,17 @@ function Is-In-PeakHours {
         $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
         $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
 
-        if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
-            return $true
+        # Adjust for time ranges that cross midnight
+        if ($endTime -lt $startTime) {
+            # End time is the next day
+            if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -or $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
+                return $true
+            }
+        } else {
+            # Normal range
+            if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
+                return $true
+            }
         }
     }
     return $false
@@ -42,6 +51,7 @@ function Perform-Housekeeping {
         $includeSubfolders = [bool]$folder.IncludeSubfolders
         $archiveEnabled = [bool]$folder.Archive.Enabled
         $archivePath = $folder.Archive.Path
+        $deleteIfEmpty = [bool]$folder.DeleteIfEmpty
 
         Log-Message -Level "Info" -Message "Processing folder: $path"
 
@@ -54,29 +64,25 @@ function Perform-Housekeeping {
                 if ($DryRun) {
                     Log-Message -Level "Info" -Message "Dry Run: Would delete $file"
                 } else {
-                    Log-Message -Level "Info" -Message "Deleting $file"
-                    Remove-Item -Path $file.FullName -Force
-                }
-
-                if ($archiveEnabled) {
-                    if ($DryRun) {
-                        Log-Message -Level "Info" -Message "Dry Run: Would archive $file to $archivePath"
-                    } else {
+                    if ($archiveEnabled) {
                         $archiveFile = Join-Path -Path $archivePath -ChildPath $file.Name
                         Log-Message -Level "Info" -Message "Archiving $file to $archivePath"
-                        Move-Item -Path $file.FullName -Destination $archiveFile
+                        Move-Item -Path $file.FullName -Destination $archiveFile -Force
+                    } else {
+                        Log-Message -Level "Info" -Message "Deleting $file"
+                        Remove-Item -Path $file.FullName -Force
                     }
                 }
             }
         }
 
         # Check if the folder is empty and delete if necessary
-        if ($folder.DeleteIfEmpty -and (Get-ChildItem -Path $path).Count -eq 0) {
+        if ($deleteIfEmpty -and (Get-ChildItem -Path $path -Recurse -File).Count -eq 0) {
             if ($DryRun) {
                 Log-Message -Level "Info" -Message "Dry Run: Would delete empty folder $path"
             } else {
                 Log-Message -Level "Info" -Message "Deleting empty folder $path"
-                Remove-Item -Path $path -Recurse
+                Remove-Item -Path $path -Recurse -Force
             }
         }
     }
