@@ -50,6 +50,14 @@ function Is-Excluded {
     return $false
 }
 
+# Function to Convert XML Boolean String to PowerShell Boolean
+function Convert-XmlBoolean {
+    param (
+        [string]$xmlValue
+    )
+    return $xmlValue -eq "true"
+}
+
 # Function to Perform Housekeeping
 function Perform-Housekeeping {
     param (
@@ -106,13 +114,17 @@ function Perform-Housekeeping {
 
 # Loop through each Path in the Configuration
 foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
+    $includeSubfolders = Convert-XmlBoolean -xmlValue $pathConfig.IncludeSubfolders
+    $archiveBeforeDelete = Convert-XmlBoolean -xmlValue $pathConfig.ArchiveBeforeDelete
+    $prioritizeLargeFiles = Convert-XmlBoolean -xmlValue $pathConfig.PrioritizeLargeFiles
+
     if ($pathConfig.Enabled -eq "true") {
         Perform-Housekeeping -path $pathConfig.Location `
                             -retentionDays $pathConfig.RetentionDays `
-                            -includeSubfolders $pathConfig.IncludeSubfolders `
-                            -archiveBeforeDelete $pathConfig.ArchiveBeforeDelete `
+                            -includeSubfolders $includeSubfolders `
+                            -archiveBeforeDelete $archiveBeforeDelete `
                             -archivePath $pathConfig.ArchivePath `
-                            -prioritizeLargeFiles $pathConfig.PrioritizeLargeFiles `
+                            -prioritizeLargeFiles $prioritizeLargeFiles `
                             -excludePatterns $pathConfig.ExcludePatterns.Pattern
     } else {
         Write-Output "Skipping disabled path $($pathConfig.Location)." | Out-File -FilePath $logFilePath -Append
