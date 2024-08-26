@@ -79,10 +79,17 @@ function Perform-Housekeeping {
     # Get Current Date for Comparison
     $currentDate = Get-Date
 
-    # Get Files and Folders to Cleanup
-    $items = Get-ChildItem -Path $path -Recurse:$includeSubfolders
+    # Initialize counters
     $filesDeleted = 0
     $foldersDeleted = 0
+
+    try {
+        # Get Files and Folders to Cleanup
+        $items = Get-ChildItem -Path $path -Recurse:$includeSubfolders -ErrorAction Stop
+    } catch {
+        Log-Message -Level "Error" -Message "Failed to retrieve items from $path. Error: $_"
+        return
+    }
 
     foreach ($item in $items) {
         # Skip excluded items
@@ -95,24 +102,28 @@ function Perform-Housekeeping {
             # For files, use LastWriteTime
             $itemAgeDays = ($currentDate - $item.LastWriteTime).Days
             if ($itemAgeDays -ge $retentionDays) {
-                if ($DryRun) {
-                    Log-Message -Level "Debug" -Message "Dry Run: Would delete file $($item.FullName)."
-                    if ($archiveBeforeDelete) {
-                        Log-Message -Level "Debug" -Message "Dry Run: Would archive file $($item.FullName) to $archivePath\$($item.Name).zip."
-                    }
-                } else {
-                    if ($archiveBeforeDelete) {
-                        if (-not (Test-Path $archivePath)) {
-                            New-Item -ItemType Directory -Path $archivePath | Out-Null
+                try {
+                    if ($DryRun) {
+                        Log-Message -Level "Debug" -Message "Dry Run: Would delete file $($item.FullName)."
+                        if ($archiveBeforeDelete) {
+                            Log-Message -Level "Debug" -Message "Dry Run: Would archive file $($item.FullName) to $archivePath\$($item.Name).zip."
                         }
-                        $zipPath = Join-Path -Path $archivePath -ChildPath "$($item.Name).zip"
-                        Compress-Archive -Path $item.FullName -DestinationPath $zipPath
-                        Log-Message -Level "Info" -Message "Archived file $($item.FullName) to $zipPath."
+                    } else {
+                        if ($archiveBeforeDelete) {
+                            if (-not (Test-Path $archivePath)) {
+                                New-Item -ItemType Directory -Path $archivePath -ErrorAction Stop | Out-Null
+                            }
+                            $zipPath = Join-Path -Path $archivePath -ChildPath "$($item.Name).zip"
+                            Compress-Archive -Path $item.FullName -DestinationPath $zipPath -ErrorAction Stop
+                            Log-Message -Level "Info" -Message "Archived file $($item.FullName) to $zipPath."
+                        }
+                        # Delete the file
+                        Remove-Item $item.FullName -Force -ErrorAction Stop
+                        $filesDeleted++
+                        Log-Message -Level "Info" -Message "Deleted file $($item.FullName)."
                     }
-                    # Delete the file
-                    Remove-Item $item.FullName -Force
-                    $filesDeleted++
-                    Log-Message -Level "Info" -Message "Deleted file $($item.FullName)."
+                } catch {
+                    Log-Message -Level "Error" -Message "Failed to process file $($item.FullName). Error: $_"
                 }
             }
         }
@@ -126,13 +137,17 @@ function Perform-Housekeeping {
                 # For empty folders, use LastAccessTime
                 $folderAgeDays = ($currentDate - $folder.LastAccessTime).Days
                 if ($folderAgeDays -ge $retentionDays) {
-                    if ($DryRun) {
-                        Log-Message -Level "Debug" -Message "Dry Run: Would delete empty folder $($folder.FullName)."
-                    } else {
-                        # Delete the empty folder
-                        Remove-Item $folder.FullName -Force
-                        $foldersDeleted++
-                        Log-Message -Level "Info" -Message "Deleted empty folder $($folder.FullName)."
+                    try {
+                        if ($DryRun) {
+                            Log-Message -Level "Debug" -Message "Dry Run: Would delete empty folder $($folder.FullName)."
+                        } else {
+                            # Delete the empty folder
+                            Remove-Item $folder.FullName -Force -ErrorAction Stop
+                            $foldersDeleted++
+                            Log-Message -Level "Info" -Message "Deleted empty folder $($folder.FullName)."
+                        }
+                    } catch {
+                        Log-Message -Level "Error" -Message "Failed to delete empty folder $($folder.FullName). Error: $_"
                     }
                 }
             }
