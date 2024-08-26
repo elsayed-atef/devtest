@@ -1,137 +1,42 @@
-param (
-    [string]$ConfigFile = "D:\data\housekeeping_config.xml",
-    [switch]$DryRun,
-    [string]$LogFile = "D:\data\temp\housekeeping.log"
-)
-
-# Global lock object for logging
-$global:logLock = [System.Object]::new()
-
-# Function to write logs
-function Write-Log {
+# Function to Check if Current Time is Within Any Peak Hour Range
+function Is-In-PeakHours {
     param (
-        [string]$Message,
-        [string]$Level = "INFO",
-        [string]$LogFile
+        [DateTime]$currentTime,
+        [array]$timeRanges
     )
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logMessage = "$timestamp [$Level] $Message"
+    foreach ($range in $timeRanges) {
+        $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
+        $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
 
-    [System.Threading.Monitor]::Enter($global:logLock)
-    try {
-        Add-Content -Path $LogFile -Value $logMessage -ErrorAction Stop
-    } finally {
-        [System.Threading.Monitor]::Exit($global:logLock)
-    }
-}
+        # Handle cases where end time is on the next day
+        if ($endTime -lt $startTime) {
+            $currentTimeInRange = $currentTime.TimeOfDay -ge $startTime.TimeOfDay -or $currentTime.TimeOfDay -lt $endTime.TimeOfDay
+        } else {
+            $currentTimeInRange = $currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay
+        }
 
-# Function to perform cleanup
-function Perform-Cleanup {
-    param (
-        [string]$Path,
-        [bool]$IncludeSubfolders,
-        [string[]]$ExcludePatterns,
-        [int]$RetentionDays,
-        [bool]$ArchiveBeforeDelete,
-        [string]$ArchivePath,
-        [switch]$DryRun,
-        [string]$LogFile
-    )
-
-    Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -Level "INFO" -LogFile $LogFile
-
-    $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
-    $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | 
-             Where-Object { $_.LastWriteTime -lt $RetentionDate }
-
-    if ($ExcludePatterns) {
-        foreach ($pattern in $ExcludePatterns) {
-            Write-Log "Excluding files matching pattern: $pattern" -Level "DEBUG" -LogFile $LogFile
-            $files = $files | Where-Object { $_.FullName -notmatch $pattern }
+        if ($currentTimeInRange) {
+            return $true
         }
     }
 
-    if ($DryRun) {
-        Write-Log "DryRun mode enabled. No files will be deleted or moved." -Level "DEBUG" -LogFile $LogFile
-        Write-Log "Files that would be processed:" -Level "DEBUG" -LogFile $LogFile
-        $files | ForEach-Object { Write-Log $_.FullName -Level "DEBUG" -LogFile $LogFile }
-        return
-    }
-
-    if ($ArchiveBeforeDelete -and $ArchivePath) {
-        Write-Log "Archiving files before deletion to $ArchivePath." -Level "INFO" -LogFile $LogFile
-        foreach ($file in $files) {
-            $dest = Join-Path -Path $ArchivePath -ChildPath $file.FullName.TrimStart($Path)
-            $destDir = Split-Path $dest
-            if (-not (Test-Path $destDir)) {
-                New-Item -Path $destDir -ItemType Directory | Out-Null
-                Write-Log "Created directory: $destDir" -Level "DEBUG" -LogFile $LogFile
-            }
-            Move-Item -Path $file.FullName -Destination $dest
-            Write-Log "Moved $($file.FullName) to $dest" -Level "DEBUG" -LogFile $LogFile
-        }
-    }
-
-    $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -Level "INFO" -LogFile $LogFile
-
-    $deletedCount = 0
-    foreach ($file in $files) {
-        Remove-Item -Path $file.FullName -Force -ErrorAction Stop
-        Write-Log "Deleted $($file.FullName)" -Level "DEBUG" -LogFile $LogFile
-        $deletedCount++
-    }
-
-    Write-Log "Deleted $deletedCount files." -Level "INFO" -LogFile $LogFile
-    $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO" -LogFile $LogFile
+    return $false
 }
 
-# Import the XML configuration
-[xml]$xmlConfig = Get-Content $ConfigFile
-
-# Process each path configuration
-foreach ($pathConfig in $xmlConfig.Housekeeping.Paths.Path) {
-    $path = $pathConfig.Path
-    $enabled = $pathConfig.Enabled -eq "true"
-    $includeSubfolders = [bool]$pathConfig.IncludeSubfolders
-    $excludePatterns = $pathConfig.ExcludePatterns.Pattern
-    $retentionDays = [int]$pathConfig.RetentionDays
-    $archiveBeforeDelete = [bool]$pathConfig.ArchiveBeforeDelete
-    $archivePath = $pathConfig.ArchivePath
-
-    Write-Log "Processing path: $path" -Level "DEBUG" -LogFile $LogFile
-    Write-Log "Enabled flag for $path is set to $enabled" -Level "DEBUG" -LogFile $LogFile
-
-    if (-not $enabled) {
-        Write-Log "Skipping disabled rule for path: $path" -Level "INFO" -LogFile $LogFile
-        continue
+# Peak Hours Configuration
+$peakHoursEnabled = Convert-XmlBoolean -xmlValue $config.HousekeepingConfig.Settings.PeakHours.Enabled
+$timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange | ForEach-Object {
+    [PSCustomObject]@{
+        Start = $_.Start
+        End = $_.End
     }
-
-    Perform-Cleanup -Path $path -IncludeSubfolders $includeSubfolders `
-                    -ExcludePatterns $excludePatterns `
-                    -RetentionDays $retentionDays `
-                    -ArchiveBeforeDelete $archiveBeforeDelete `
-                    -ArchivePath $archivePath `
-                    -DryRun $DryRun `
-                    -LogFile $LogFile
 }
 
-# Heapdump cleanup
-$heapdumpConfig = $xmlConfig.Housekeeping.Heapdump
-$heapdumpPath = $heapdumpConfig.Path
-$heapdumpRetentionDays = [int]$heapdumpConfig.RetentionDays
-
-if ($heapdumpConfig.Enabled -eq "true") {
-    Write-Log "Performing heapdump cleanup for path: $heapdumpPath with retention period: $heapdumpRetentionDays days." -Level "INFO" -LogFile $LogFile
-    Perform-Cleanup -Path $heapdumpPath -IncludeSubfolders $false `
-                    -ExcludePatterns @() `
-                    -RetentionDays $heapdumpRetentionDays `
-                    -ArchiveBeforeDelete $false `
-                    -ArchivePath "" `
-                    -DryRun $DryRun `
-                    -LogFile $LogFile
+if ($peakHoursEnabled) {
+    $currentTime = Get-Date
+    if (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges) {
+        Log-Message -Level "Info" -Message "Current time is within peak hours. Housekeeping script is paused."
+        exit
+    }
 }
-
-Write-Log "Housekeeping completed." -Level "INFO" -LogFile $LogFile
