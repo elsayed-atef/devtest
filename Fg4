@@ -7,16 +7,8 @@ function Log-Message {
 
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "$timestamp [$Level] $Message"
+    Write-Output $logEntry
     Add-Content -Path $LogFilePath -Value $logEntry
-}
-
-# Function to Convert String to Boolean Safely
-function ConvertTo-Boolean {
-    param (
-        [string]$value
-    )
-
-    return [System.Convert]::ToBoolean($value)
 }
 
 # Function to Check if Current Time is Within Peak Hours
@@ -37,6 +29,22 @@ function Is-In-PeakHours {
     return $false
 }
 
+# Function to Check if a Folder Matches Exclude Patterns
+function Is-Excluded {
+    param (
+        [string]$folderName,
+        [array]$patterns
+    )
+
+    foreach ($pattern in $patterns) {
+        if ($folderName -like $pattern) {
+            Log-Message -Level "Debug" -Message "Folder '$folderName' matches exclude pattern '$pattern'."
+            return $true
+        }
+    }
+    return $false
+}
+
 # Function to Perform Housekeeping Tasks
 function Perform-Housekeeping {
     param (
@@ -44,61 +52,62 @@ function Perform-Housekeeping {
         [bool]$DryRun
     )
 
-    foreach ($folder in $config.HousekeepingConfig.Paths.Path) {
-        $path = $folder.Location
-        $enabled = ConvertTo-Boolean $folder.Enabled
-        $retentionDays = [int]$folder.RetentionDays
-        $includeSubfolders = ConvertTo-Boolean $folder.IncludeSubfolders
-        $archiveEnabled = ConvertTo-Boolean $folder.Archive.Enabled
-        $archivePath = $folder.Archive.Path
-        $excludePatterns = @($folder.ExcludePatterns.Pattern)
+    foreach ($pathElement in $config.HousekeepingConfig.Paths.Path) {
+        $path = $pathElement.Location
+        $retentionDays = [int]$pathElement.RetentionDays
+        $includeSubfolders = [bool]$pathElement.IncludeSubfolders
+        $archiveEnabled = [bool]$pathElement.Archive.Enabled
+        $archivePath = $pathElement.Archive.Path
+        $excludePatterns = $pathElement.ExcludePatterns.Pattern | ForEach-Object { $_.Trim() }
 
-        if (-not $enabled) {
-            Log-Message -Level "Info" -Message "Skipping disabled path: $path"
-            continue
-        }
-
-        Log-Message -Level "Info" -Message "Processing folder: $path"
-        Log-Message -Level "Debug" -Message "Archive.Enabled: $archiveEnabled, Archive.Path: $archivePath, RetentionDays: $retentionDays, IncludeSubfolders: $includeSubfolders, ExcludePatterns: $($excludePatterns -join ', ')"
+        Log-Message -Level "Info" -Message "Processing path: $path"
+        Log-Message -Level "Debug" -Message "Exclude patterns: $($excludePatterns -join ', ')"
 
         $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
+        $folders = Get-ChildItem -Path $path -Recurse:$includeSubfolders -Directory
 
         foreach ($file in $files) {
-            $fileFullName = $file.FullName
-            $fileAge = (Get-Date) - $file.LastWriteTime
-
-            if ($excludePatterns -and ($excludePatterns | ForEach-Object { $fileFullName -like "*$_*" })) {
-                Log-Message -Level "Info" -Message "Excluding file due to matching pattern: $fileFullName"
+            if (Is-Excluded -folderName $file.Directory.Name -patterns $excludePatterns) {
+                Log-Message -Level "Info" -Message "Skipping excluded file $($file.FullName)."
                 continue
             }
 
+            $fileAge = (Get-Date) - $file.LastWriteTime
+
             if ($fileAge.Days -gt $retentionDays) {
-                if ($archiveEnabled) {
-                    $archiveFile = Join-Path -Path $archivePath -ChildPath $file.Name
-                    if ($DryRun) {
-                        Log-Message -Level "Info" -Message "Dry Run: Would archive $fileFullName to $archiveFile"
-                    } else {
-                        Log-Message -Level "Info" -Message "Archiving $fileFullName to $archiveFile"
-                        Move-Item -Path $fileFullName -Destination $archiveFile
-                    }
+                if ($DryRun) {
+                    Log-Message -Level "Info" -Message "Dry Run: Would delete $file"
                 } else {
+                    Log-Message -Level "Info" -Message "Deleting $file"
+                    Remove-Item -Path $file.FullName -Force
+                }
+
+                if ($archiveEnabled) {
                     if ($DryRun) {
-                        Log-Message -Level "Info" -Message "Dry Run: Would delete $fileFullName"
+                        Log-Message -Level "Info" -Message "Dry Run: Would archive $file to $archivePath"
                     } else {
-                        Log-Message -Level "Info" -Message "Deleting $fileFullName"
-                        Remove-Item -Path $fileFullName -Force
+                        $archiveFile = Join-Path -Path $archivePath -ChildPath $file.Name
+                        Log-Message -Level "Info" -Message "Archiving $file to $archivePath"
+                        Move-Item -Path $file.FullName -Destination $archiveFile
                     }
                 }
             }
         }
 
-        # Check if the folder is empty and delete if necessary
-        if ($folder.DeleteIfEmpty -and (Get-ChildItem -Path $path).Count -eq 0) {
-            if ($DryRun) {
-                Log-Message -Level "Info" -Message "Dry Run: Would delete empty folder $path"
-            } else {
-                Log-Message -Level "Info" -Message "Deleting empty folder $path"
-                Remove-Item -Path $path -Recurse
+        foreach ($folder in $folders) {
+            if (Is-Excluded -folderName $folder.Name -patterns $excludePatterns) {
+                Log-Message -Level "Info" -Message "Skipping excluded folder $($folder.FullName)."
+                continue
+            }
+
+            # Check if the folder is empty and delete if necessary
+            if ($folder.DeleteIfEmpty -and (Get-ChildItem -Path $folder.FullName).Count -eq 0) {
+                if ($DryRun) {
+                    Log-Message -Level "Info" -Message "Dry Run: Would delete empty folder $folder.FullName"
+                } else {
+                    Log-Message -Level "Info" -Message "Deleting empty folder $folder.FullName"
+                    Remove-Item -Path $folder.FullName -Recurse
+                }
             }
         }
     }
@@ -113,12 +122,12 @@ while ($true) {
     $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
     $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
     $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
-    $DryRun = ConvertTo-Boolean $config.HousekeepingConfig.Settings.DryRun
+    $DryRun = [bool]$config.HousekeepingConfig.Settings.DryRun
 
     # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
     $currentTime = Get-Date
-    $peakHoursEnabled = ConvertTo-Boolean $config.HousekeepingConfig.Settings.PeakHours.Enabled
-    $sleepUntilPeakHoursEnd = ConvertTo-Boolean $config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
+    $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
+    $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
     $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
     if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
