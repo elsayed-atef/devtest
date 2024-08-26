@@ -49,6 +49,22 @@ function Is-In-PeakHours {
     return $false
 }
 
+# Function to Check if a Path Should be Excluded
+function Should-ExcludePath {
+    param (
+        [string]$path,
+        [array]$excludePatterns
+    )
+
+    foreach ($pattern in $excludePatterns) {
+        if ($path -like $pattern) {
+            Log-Message -Level "Debug" -Message "Path $path is excluded based on pattern $pattern."
+            return $true
+        }
+    }
+    return $false
+}
+
 # Function to Perform Housekeeping Tasks
 function Perform-Housekeeping {
     param (
@@ -62,6 +78,12 @@ function Perform-Housekeeping {
         $includeSubfolders = [bool]$folder.IncludeSubfolders
         $archiveEnabled = [bool]$folder.Archive.Enabled
         $archivePath = $folder.Archive.Path
+        $excludePatterns = $folder.ExcludePatterns.Pattern
+
+        if (Should-ExcludePath -path $path -excludePatterns $excludePatterns) {
+            Log-Message -Level "Info" -Message "Skipping folder $path based on exclusion patterns."
+            continue
+        }
 
         Log-Message -Level "Debug" -Message "Processing folder: $path"
         Log-Message -Level "Debug" -Message "RetentionDays: $retentionDays, IncludeSubfolders: $includeSubfolders, ArchiveEnabled: $archiveEnabled, ArchivePath: $archivePath"
