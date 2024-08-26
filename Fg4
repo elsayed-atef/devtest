@@ -18,6 +18,10 @@ function Is-In-PeakHours {
     )
 
     foreach ($range in $timeRanges) {
+        if ([string]::IsNullOrWhiteSpace($range.Start) -or [string]::IsNullOrWhiteSpace($range.End)) {
+            continue
+        }
+
         $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
         $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
 
@@ -35,47 +39,39 @@ function Perform-Housekeeping {
         [bool]$DryRun
     )
 
-    foreach ($folder in $config.housekeepingconfig.paths.path) {
-        $path = $folder.location
-        $enabled = [bool]$folder.Enabled
+    foreach ($folder in $config.HousekeepingConfig.Paths.Path) {
+        $path = $folder.Location
+        $retentionDays = [int]$folder.RetentionDays
         $includeSubfolders = [bool]$folder.IncludeSubfolders
         $archiveEnabled = [bool]$folder.Archive.Enabled
         $archivePath = $folder.Archive.Path
         $excludePatterns = $folder.ExcludePatterns.Pattern
 
         Log-Message -Level "Info" -Message "Processing folder: $path"
-        Log-Message -Level "Info" -Message "Enabled: $enabled, Include Subfolders: $includeSubfolders, Archive Enabled: $archiveEnabled"
+        Log-Message -Level "Info" -Message "Archive Enabled: $archiveEnabled"
 
-        if (-not $enabled) {
-            Log-Message -Level "Info" -Message "Skipping $path because it is disabled."
-            continue
-        }
-
-        $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
-
-        # Exclude folders based on patterns
-        foreach ($pattern in $excludePatterns) {
-            Log-Message -Level "Info" -Message "Excluding files with pattern: $pattern"
-            $files = $files | Where-Object { $_.FullName -notmatch $pattern }
+        $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File | Where-Object {
+            $excludePatterns -notcontains $_.Name
         }
 
         foreach ($file in $files) {
             $fileAge = (Get-Date) - $file.LastWriteTime
+            Log-Message -Level "Info" -Message "Processing file: $($file.FullName)"
 
-            if ($fileAge.Days -gt $folder.RetentionDays) {
+            if ($fileAge.Days -gt $retentionDays) {
                 if ($DryRun) {
-                    Log-Message -Level "Info" -Message "Dry Run: Would delete $file"
+                    Log-Message -Level "Info" -Message "Dry Run: Would delete $($file.FullName)"
                 } else {
-                    Log-Message -Level "Info" -Message "Deleting $file"
+                    Log-Message -Level "Info" -Message "Deleting $($file.FullName)"
                     Remove-Item -Path $file.FullName -Force
                 }
 
                 if ($archiveEnabled) {
                     if ($DryRun) {
-                        Log-Message -Level "Info" -Message "Dry Run: Would archive $file to $archivePath"
+                        Log-Message -Level "Info" -Message "Dry Run: Would archive $($file.FullName) to $archivePath"
                     } else {
                         $archiveFile = Join-Path -Path $archivePath -ChildPath $file.Name
-                        Log-Message -Level "Info" -Message "Archiving $file to $archivePath"
+                        Log-Message -Level "Info" -Message "Archiving $($file.FullName) to $archivePath"
                         Move-Item -Path $file.FullName -Destination $archiveFile
                     }
                 }
