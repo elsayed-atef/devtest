@@ -2,11 +2,8 @@ param (
     [string]$ConfigFile = "D:\data\housekeeping_config.xml",
     [switch]$Parallel,
     [switch]$DryRun,
-    [string]$LogFile = "D:\data\temp\housekeeping.log"
+    [string]$MainLogFile = "D:\data\temp\housekeeping.log"
 )
-
-# Global lock object for logging
-$global:logLock = [System.Object]::new()
 
 # Function to write logs
 function Write-Log {
@@ -19,12 +16,7 @@ function Write-Log {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logMessage = "$timestamp [$Level] $Message"
 
-    [System.Threading.Monitor]::Enter($global:logLock)
-    try {
-        Add-Content -Path $LogFile -Value $logMessage -ErrorAction Stop
-    } finally {
-        [System.Threading.Monitor]::Exit($global:logLock)
-    }
+    [System.IO.File]::AppendAllText($LogFile, "$logMessage`r`n")
 }
 
 # Function to perform cleanup
@@ -92,28 +84,6 @@ function Perform-Cleanup {
 # Import the XML configuration
 [xml]$xmlConfig = Get-Content $ConfigFile
 
-# Define job script block
-$scriptBlock = {
-    param (
-        $Path,
-        $IncludeSubfolders,
-        $ExcludePatterns,
-        $RetentionDays,
-        $ArchiveBeforeDelete,
-        $ArchivePath,
-        $DryRun,
-        $LogFile
-    )
-
-    . "D:\scripts\Perform-Cleanup.ps1" -Path $Path -IncludeSubfolders $IncludeSubfolders `
-                                        -ExcludePatterns $ExcludePatterns `
-                                        -RetentionDays $RetentionDays `
-                                        -ArchiveBeforeDelete $ArchiveBeforeDelete `
-                                        -ArchivePath $ArchivePath `
-                                        -DryRun $DryRun `
-                                        -LogFile $LogFile
-}
-
 # Process each path configuration
 foreach ($pathConfig in $xmlConfig.Housekeeping.Paths.Path) {
     $path = $pathConfig.Path
@@ -124,16 +94,38 @@ foreach ($pathConfig in $xmlConfig.Housekeeping.Paths.Path) {
     $archiveBeforeDelete = [bool]$pathConfig.ArchiveBeforeDelete
     $archivePath = $pathConfig.ArchivePath
 
-    Write-Log "Processing path: $path" -Level "DEBUG" -LogFile $LogFile
-    Write-Log "Enabled flag for $path is set to $enabled" -Level "DEBUG" -LogFile $LogFile
+    $JobLogFile = [System.IO.Path]::Combine("D:\data\temp\logs", "$($path.GetHashCode()).log")
+
+    Write-Log "Processing path: $path" -Level "DEBUG" -LogFile $MainLogFile
+    Write-Log "Enabled flag for $path is set to $enabled" -Level "DEBUG" -LogFile $MainLogFile
 
     if (-not $enabled) {
-        Write-Log "Skipping disabled rule for path: $path" -Level "INFO" -LogFile $LogFile
+        Write-Log "Skipping disabled rule for path: $path" -Level "INFO" -LogFile $MainLogFile
         continue
     }
 
     if ($Parallel) {
-        Start-Job -ScriptBlock $scriptBlock -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $LogFile
+        Start-Job -ScriptBlock {
+            param (
+                $Path,
+                $IncludeSubfolders,
+                $ExcludePatterns,
+                $RetentionDays,
+                $ArchiveBeforeDelete,
+                $ArchivePath,
+                $DryRun,
+                $JobLogFile
+            )
+
+            . "D:\scripts\Perform-Cleanup.ps1" -Path $Path -IncludeSubfolders $IncludeSubfolders `
+                                                -ExcludePatterns $ExcludePatterns `
+                                                -RetentionDays $RetentionDays `
+                                                -ArchiveBeforeDelete $ArchiveBeforeDelete `
+                                                -ArchivePath $ArchivePath `
+                                                -DryRun $DryRun `
+                                                -LogFile $JobLogFile
+        } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $JobLogFile
+        Write-Log "Started job for path: $path with log file $JobLogFile" -Level "INFO" -LogFile $MainLogFile
     } else {
         . "D:\scripts\Perform-Cleanup.ps1" -Path $path -IncludeSubfolders $includeSubfolders `
                                             -ExcludePatterns $excludePatterns `
@@ -141,7 +133,7 @@ foreach ($pathConfig in $xmlConfig.Housekeeping.Paths.Path) {
                                             -ArchiveBeforeDelete $archiveBeforeDelete `
                                             -ArchivePath $archivePath `
                                             -DryRun $DryRun `
-                                            -LogFile $LogFile
+                                            -LogFile $JobLogFile
     }
 }
 
@@ -150,14 +142,14 @@ if ($Parallel) {
     Get-Job | ForEach-Object {
         try {
             $jobResult = Wait-Job -Job $_ -ErrorAction Stop | Receive-Job -ErrorAction Stop
-            Write-Log "Job completed successfully: $($_.Id)" -Level "INFO" -LogFile $LogFile
+            Write-Log "Job completed successfully: $($_.Id)" -Level "INFO" -LogFile $MainLogFile
             $jobResult
         } catch {
-            Write-Log "Failed to complete job $_. Error: $_" -Level "ERROR" -LogFile $LogFile
+            Write-Log "Failed to complete job $_. Error: $_" -Level "ERROR" -LogFile $MainLogFile
         } finally {
             Remove-Job -Job $_ -ErrorAction SilentlyContinue
         }
     }
 }
 
-Write-Log "Housekeeping completed." -Level "INFO" -LogFile $LogFile
+Write-Log "Housekeeping completed." -Level "INFO" -LogFile $MainLogFile
