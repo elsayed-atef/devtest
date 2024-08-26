@@ -112,8 +112,12 @@ while ($true) {
     $DryRun = [bool]$config.HousekeepingConfig.Settings.DryRun
 
     # Extract Peak Hours settings
-    $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
-    $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
+    $peakHoursEnabledRaw = $config.HousekeepingConfig.Settings.PeakHours.Enabled
+    $peakHoursEnabled = $peakHoursEnabledRaw -eq "true"
+
+    $sleepUntilPeakHoursEndRaw = $config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
+    $sleepUntilPeakHoursEnd = $sleepUntilPeakHoursEndRaw -eq "true"
+
     $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
     Log-Message -Level "Info" -Message "Peak hours enabled: $peakHoursEnabled"
