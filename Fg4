@@ -10,6 +10,17 @@ $logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
 $maxLogSizeMB = $config.HousekeepingConfig.Settings.MaxLogSizeMB
 $interactiveMode = [bool]$config.HousekeepingConfig.Settings.InteractiveMode
 
+# Function to Log Messages with Timestamp and Log Level
+function Log-Message {
+    param (
+        [string]$Level,
+        [string]$Message
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "$timestamp [$Level] $Message"
+    $logEntry | Out-File -FilePath $logFilePath -Append
+}
+
 # Function to Perform Log Rotation
 function Rotate-Log {
     param (
@@ -71,7 +82,7 @@ function Perform-Housekeeping {
     for ($i = 0; $i -lt $retryCount; $i++) {
         try {
             # Log the Start of Housekeeping for a Specific Path
-            Write-Output "Starting housekeeping for $path with retention of $retentionDays days." | Out-File -FilePath $logFilePath -Append
+            Log-Message -Level "Info" -Message "Starting housekeeping for $path with retention of $retentionDays days."
 
             # Get Files to Cleanup, Prioritize Large Files if Enabled
             $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders | Where-Object {
@@ -87,37 +98,42 @@ function Perform-Housekeeping {
                 if ($interactiveMode -and -not $DryRun) {
                     $response = Read-Host "Do you want to delete $($file.FullName)? (Y/N)"
                     if ($response -ne 'Y') {
-                        Write-Output "Skipped file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
+                        Log-Message -Level "Info" -Message "Skipped file $($file.FullName)."
                         continue
                     }
                 }
 
                 if ($DryRun) {
-                    Write-Output "Dry Run: Would archive file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
-                    Write-Output "Dry Run: Would delete file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
+                    Log-Message -Level "Debug" -Message "Dry Run: Would archive file $($file.FullName)."
+                    Log-Message -Level "Debug" -Message "Dry Run: Would delete file $($file.FullName)."
                 } else {
                     if ($archiveBeforeDelete) {
+                        if (-not (Test-Path $archivePath)) {
+                            New-Item -ItemType Directory -Path $archivePath | Out-Null
+                        }
                         $zipPath = Join-Path -Path $archivePath -ChildPath "$($file.Name).zip"
                         Compress-Archive -Path $file.FullName -DestinationPath $zipPath
-                        Write-Output "Archived file $($file.FullName) to $zipPath." | Out-File -FilePath $logFilePath -Append
+                        Log-Message -Level "Info" -Message "Archived file $($file.FullName) to $zipPath."
+                    } else {
+                        Log-Message -Level "Info" -Message "Archiving is disabled, skipping archive step."
                     }
 
                     # Delete the file
                     Remove-Item $file.FullName -Force
-                    Write-Output "Deleted file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
+                    Log-Message -Level "Info" -Message "Deleted file $($file.FullName)."
                 }
             }
 
             # Log Completion of Housekeeping for the Path
-            Write-Output "Completed housekeeping for $path." | Out-File -FilePath $logFilePath -Append
+            Log-Message -Level "Info" -Message "Completed housekeeping for $path."
             return
         } catch {
-            Write-Output "Error during housekeeping for $path: $_. Exception: $_.Exception.Message" | Out-File -FilePath $logFilePath -Append
+            Log-Message -Level "Error" -Message "Error during housekeeping for $path: $_. Exception: $_.Exception.Message"
             if ($i -lt ($retryCount - 1)) {
-                Write-Output "Retrying in $retryDelay seconds..." | Out-File -FilePath $logFilePath -Append
+                Log-Message -Level "Info" -Message "Retrying in $retryDelay seconds..."
                 Start-Sleep -Seconds $retryDelay
             } else {
-                Write-Output "Failed after $retryCount attempts. Skipping path $path." | Out-File -FilePath $logFilePath -Append
+                Log-Message -Level "Error" -Message "Failed after $retryCount attempts. Skipping path $path."
             }
         }
     }
@@ -130,7 +146,7 @@ $startTime = Get-Date
 Rotate-Log -logFilePath $logFilePath -maxLogSizeMB $maxLogSizeMB
 
 # Log the Start of the Housekeeping Script
-Write-Output "Housekeeping script started at $(Get-Date)." | Out-File -FilePath $logFilePath -Append
+Log-Message -Level "Info" -Message "Housekeeping script started."
 
 # Loop through each Path in the Configuration
 foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
@@ -147,12 +163,12 @@ foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
                             -prioritizeLargeFiles $prioritizeLargeFiles `
                             -excludePatterns $pathConfig.ExcludePatterns.Pattern
     } else {
-        Write-Output "Skipping disabled path $($pathConfig.Location)." | Out-File -FilePath $logFilePath -Append
+        Log-Message -Level "Info" -Message "Skipping disabled path $($pathConfig.Location)."
     }
 }
 
 # Log the End of the Housekeeping Script
 $endTime = Get-Date
 $executionTime = $endTime - $startTime
-Write-Output "Housekeeping script completed at $(Get-Date)." | Out-File -FilePath $logFilePath -Append
-Write-Output "Script executed in $($executionTime.TotalSeconds) seconds." | Out-File -FilePath $logFilePath -Append
+Log-Message -Level "Info" -Message "Housekeeping script completed."
+Log-Message -Level "Info" -Message "Script executed in $($executionTime.TotalSeconds) seconds."
