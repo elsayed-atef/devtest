@@ -8,7 +8,6 @@ param (
 # Extract Global Settings
 $logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
 $maxLogSizeMB = $config.HousekeepingConfig.Settings.MaxLogSizeMB
-$diskUsageThreshold = $config.HousekeepingConfig.Settings.DiskUsageThreshold
 $interactiveMode = [bool]$config.HousekeepingConfig.Settings.InteractiveMode
 
 # Function to Perform Log Rotation
@@ -36,10 +35,19 @@ Rotate-Log -logFilePath $logFilePath -maxLogSizeMB $maxLogSizeMB
 # Log the Start of the Housekeeping Script
 Write-Output "Housekeeping script started at $(Get-Date)." | Out-File -FilePath $logFilePath -Append
 
-# Function to Check Disk Usage
-function Check-DiskUsage {
-    $drive = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -gt ($diskUsageThreshold * $_.Used / 100) }
-    return $drive
+# Function to Check Exclusions
+function Is-Excluded {
+    param (
+        [string]$path,
+        [string[]]$patterns
+    )
+
+    foreach ($pattern in $patterns) {
+        if ($path -match $pattern) {
+            return $true
+        }
+    }
+    return $false
 }
 
 # Function to Perform Housekeeping
@@ -50,7 +58,8 @@ function Perform-Housekeeping {
         [bool]$includeSubfolders,
         [bool]$archiveBeforeDelete,
         [string]$archivePath,
-        [bool]$prioritizeLargeFiles
+        [bool]$prioritizeLargeFiles,
+        [string[]]$excludePatterns
     )
 
     # Log the Start of Housekeeping for a Specific Path
@@ -58,7 +67,8 @@ function Perform-Housekeeping {
 
     # Get Files to Cleanup, Prioritize Large Files if Enabled
     $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders | Where-Object {
-        $_.LastWriteTime -lt (Get-Date).AddDays(-$retentionDays)
+        $_.LastWriteTime -lt (Get-Date).AddDays(-$retentionDays) -and
+        -not (Is-Excluded -path $_.FullName -patterns $excludePatterns)
     }
 
     if ($prioritizeLargeFiles) {
@@ -94,14 +104,6 @@ function Perform-Housekeeping {
     Write-Output "Completed housekeeping for $path." | Out-File -FilePath $logFilePath -Append
 }
 
-# Disk Usage Check
-$drivesOverThreshold = Check-DiskUsage
-if ($drivesOverThreshold.Count -gt 0) {
-    Write-Output "Drives over disk usage threshold: $($drivesOverThreshold.Name -join ', ')" | Out-File -FilePath $logFilePath -Append
-} else {
-    Write-Output "No drives are over the disk usage threshold." | Out-File -FilePath $logFilePath -Append
-}
-
 # Loop through each Path in the Configuration
 foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
     if ($pathConfig.Enabled -eq "true") {
@@ -110,7 +112,8 @@ foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
                             -includeSubfolders $pathConfig.IncludeSubfolders `
                             -archiveBeforeDelete $pathConfig.ArchiveBeforeDelete `
                             -archivePath $pathConfig.ArchivePath `
-                            -prioritizeLargeFiles $pathConfig.PrioritizeLargeFiles
+                            -prioritizeLargeFiles $pathConfig.PrioritizeLargeFiles `
+                            -excludePatterns $pathConfig.ExcludePatterns.Pattern
     } else {
         Write-Output "Skipping disabled path $($pathConfig.Location)." | Out-File -FilePath $logFilePath -Append
     }
