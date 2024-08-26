@@ -10,6 +10,15 @@ function Log-Message {
     Add-Content -Path $LogFilePath -Value $logEntry
 }
 
+# Function to Convert String to Boolean Safely
+function ConvertTo-Boolean {
+    param (
+        [string]$value
+    )
+
+    return [System.Convert]::ToBoolean($value)
+}
+
 # Function to Check if Current Time is Within Peak Hours
 function Is-In-PeakHours {
     param (
@@ -37,10 +46,10 @@ function Perform-Housekeeping {
 
     foreach ($folder in $config.HousekeepingConfig.Paths.Path) {
         $path = $folder.Location
-        $enabled = [bool]$folder.Enabled
+        $enabled = ConvertTo-Boolean $folder.Enabled
         $retentionDays = [int]$folder.RetentionDays
-        $includeSubfolders = [bool]$folder.IncludeSubfolders
-        $archiveEnabled = [bool]$folder.Archive.Enabled
+        $includeSubfolders = ConvertTo-Boolean $folder.IncludeSubfolders
+        $archiveEnabled = ConvertTo-Boolean $folder.Archive.Enabled
         $archivePath = $folder.Archive.Path
         $excludePatterns = @($folder.ExcludePatterns.Pattern)
 
@@ -104,12 +113,12 @@ while ($true) {
     $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
     $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
     $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
-    $DryRun = [bool]$config.HousekeepingConfig.Settings.DryRun
+    $DryRun = ConvertTo-Boolean $config.HousekeepingConfig.Settings.DryRun
 
     # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
     $currentTime = Get-Date
-    $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
-    $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
+    $peakHoursEnabled = ConvertTo-Boolean $config.HousekeepingConfig.Settings.PeakHours.Enabled
+    $sleepUntilPeakHoursEnd = ConvertTo-Boolean $config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
     $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
     if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
