@@ -18,19 +18,20 @@ function Is-In-PeakHours {
         [array]$timeRanges
     )
 
-    foreach ($range in $timeRanges) {
-        $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
-        $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
+    $currentTimeOfDay = $currentTime.TimeOfDay
 
-        # Adjust for time ranges that cross midnight
+    foreach ($range in $timeRanges) {
+        $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null).TimeOfDay
+        $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null).TimeOfDay
+
         if ($endTime -lt $startTime) {
-            # End time is the next day
-            if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -or $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
+            # Time range crosses midnight
+            if ($currentTimeOfDay -ge $startTime -or $currentTimeOfDay -lt $endTime) {
                 return $true
             }
         } else {
-            # Normal range
-            if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
+            # Normal time range
+            if ($currentTimeOfDay -ge $startTime -and $currentTimeOfDay -lt $endTime) {
                 return $true
             }
         }
@@ -109,13 +110,13 @@ while ($true) {
         if ($sleepUntilPeakHoursEnd) {
             # Calculate the remaining sleep time until the end of the peak hours
             $endPeakHours = $timeRanges | Where-Object {
-                $endTime = [datetime]::ParseExact($_.End, "HH:mm", $null)
-                $endTime.TimeOfDay -gt $currentTime.TimeOfDay
+                $endTime = [datetime]::ParseExact($_.End, "HH:mm", $null).TimeOfDay
+                $endTime -gt $currentTime.TimeOfDay
             } | Sort-Object Start | Select-Object -First 1
 
             if ($endPeakHours) {
-                $endTimePeak = [datetime]::ParseExact($endPeakHours.End, "HH:mm", $null)
-                $sleepTime = ($endTimePeak.TimeOfDay - $currentTime.TimeOfDay).TotalMinutes
+                $endTimePeak = [datetime]::ParseExact($endPeakHours.End, "HH:mm", $null).TimeOfDay
+                $sleepTime = ($endTimePeak - $currentTime.TimeOfDay).TotalMinutes
                 Log-Message -Level "Info" -Message "Sleeping until peak hours end. Sleeping for $sleepTime minutes."
                 Start-Sleep -Minutes $sleepTime
                 continue
