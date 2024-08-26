@@ -1,81 +1,46 @@
-# Logging Function
+# Function to Log Messages with Timestamp and Log Level
 function Log-Message {
     param (
         [string]$Level,
         [string]$Message
     )
+
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "$timestamp [$Level] $Message"
+    Write-Output $logEntry
     Add-Content -Path $LogFilePath -Value $logEntry
 }
 
-# Function to Check if Current Time is Within Peak Hours
-function Is-In-PeakHours {
+# Function to Test Time Parsing
+function Test-TimeParsing {
     param (
-        [datetime]$currentTime,
-        [xml]$timeRanges
+        [xml]$config
     )
 
-    foreach ($range in $timeRanges.Range) {
-        $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
-        $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
+    $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
-        if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
-            return $true
+    foreach ($range in $timeRanges) {
+        try {
+            $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null).TimeOfDay
+            $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null).TimeOfDay
+            Log-Message -Level "Info" -Message "Successfully parsed time range: Start=$startTime, End=$endTime"
+        } catch {
+            Log-Message -Level "Error" -Message "Failed to parse time: $($_.Exception.Message). Start: $($range.Start), End: $($range.End)"
         }
     }
-    return $false
 }
 
-# Main Loop
-while ($true) {
+# Main Test Function
+function Main {
     # Load XML Configuration
     $config = [xml](Get-Content "HousekeepingConfig.xml")
 
-    # Log file path and settings
-    $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
-    $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
-    $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
+    # Define LogFilePath for this test
+    $LogFilePath = "D:\data\logs\time_parsing_test.log"
 
-    # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
-    $currentTime = Get-Date
-    $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
-    $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
-    $timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange
-
-    if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
-        if ($sleepUntilPeakHoursEnd) {
-            # Calculate the remaining sleep time until the end of the peak hours
-            $endPeakHours = $timeRanges.Range | Where-Object {
-                $endTime = [datetime]::ParseExact($_.End, "HH:mm", $null)
-                $endTime.TimeOfDay -gt $currentTime.TimeOfDay
-            } | Sort-Object Start | Select-Object -First 1
-
-            if ($endPeakHours) {
-                $endTimePeak = [datetime]::ParseExact($endPeakHours.End, "HH:mm", $null)
-                $sleepTime = ($endTimePeak.TimeOfDay - $currentTime.TimeOfDay).TotalMinutes
-                Log-Message -Level "Info" -Message "Sleeping until peak hours end. Sleeping for $sleepTime minutes."
-                Start-Sleep -Minutes $sleepTime
-                continue
-            }
-        }
-    }
-
-    # Perform Housekeeping tasks here
-    Log-Message -Level "Info" -Message "Starting housekeeping tasks..."
-
-    # Implement your housekeeping logic here
-    # Example: Log-Message -Level "Info" -Message "Cleaning up directory X..."
-
-    Log-Message -Level "Info" -Message "Completed housekeeping tasks."
-
-    # Log rotation check
-    if ((Get-Item $LogFilePath).Length -gt ($MaxLogSizeMB * 1MB)) {
-        Rename-Item -Path $LogFilePath -NewName "$LogFilePath.$(Get-Date -Format 'yyyyMMddHHmmss').log"
-        Log-Message -Level "Info" -Message "Log file rotated."
-    }
-
-    # Sleep for configured interval
-    Log-Message -Level "Info" -Message "Sleeping for $cleanupIntervalHours hours."
-    Start-Sleep -Seconds ($cleanupIntervalHours * 3600)
+    # Test Time Parsing
+    Test-TimeParsing -config $config
 }
+
+# Run the main test function
+Main
