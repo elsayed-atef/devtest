@@ -57,14 +57,17 @@ function Perform-Housekeeping {
         $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
 
         foreach ($file in $files) {
-            $fileAge = (Get-Date) - $file.LastWriteTime
             $relativePath = $file.FullName.Substring($path.Length).TrimStart("\\")
 
             # Check if the file or folder should be excluded
-            if ($excludePatterns -contains $relativePath.ToLower()) {
-                Log-Message -Level "Info" -Message "Skipping excluded file/folder: $relativePath"
-                continue
+            foreach ($pattern in $excludePatterns) {
+                if ($relativePath.ToLower() -like "*$pattern*") {
+                    Log-Message -Level "Info" -Message "Skipping excluded file/folder: $file.FullName"
+                    continue 2
+                }
             }
+
+            $fileAge = (Get-Date) - $file.LastWriteTime
 
             if ($fileAge.Days -gt $retentionDays) {
                 if ($DryRun) {
