@@ -1,42 +1,41 @@
-<Housekeeping>
+<HousekeepingConfig>
+    <Settings>
+        <LogFilePath>D:\data\temp\housekeeping.log</LogFilePath>
+        <MaxLogSizeMB>10</MaxLogSizeMB>
+        <RetentionDays>8</RetentionDays>
+        <IncludeSubfolders>true</IncludeSubfolders>
+        <ArchiveBeforeDelete>true</ArchiveBeforeDelete>
+        <ArchivePath>C:\archive</ArchivePath>
+        <InteractiveMode>false</InteractiveMode>
+        <DiskUsageThreshold>85</DiskUsageThreshold>
+    </Settings>
+
     <Paths>
         <Path>
-            <Path>C:\temp\logs</Path>
+            <Location>C:\temp\logs</Location>
             <Enabled>true</Enabled>
-            <IncludeSubfolders>true</IncludeSubfolders>
-            <ExcludePatterns>
-                <Pattern>.*\.keep</Pattern>
-            </ExcludePatterns>
             <RetentionDays>8</RetentionDays>
+            <IncludeSubfolders>true</IncludeSubfolders>
             <ArchiveBeforeDelete>true</ArchiveBeforeDelete>
-            <ArchivePath>C:\temp\archive\logs</ArchivePath>
+            <ArchivePath>C:\archive\logs</ArchivePath>
+            <PrioritizeLargeFiles>true</PrioritizeLargeFiles>
         </Path>
         <Path>
-            <Path>C:\temp\logs\keep</Path>
+            <Location>C:\temp\logs\keep</Location>
             <Enabled>true</Enabled>
-            <IncludeSubfolders>false</IncludeSubfolders>
-            <ExcludePatterns>
-                <Pattern>.*\.keep</Pattern>
-            </ExcludePatterns>
             <RetentionDays>10</RetentionDays>
-            <ArchiveBeforeDelete>false</ArchiveBeforeDelete>
-            <ArchivePath></ArchivePath>
+            <IncludeSubfolders>false</IncludeSubfolders>
+            <ArchiveBeforeDelete>true</ArchiveBeforeDelete>
+            <ArchivePath>C:\archive\logs\keep</ArchivePath>
+            <PrioritizeLargeFiles>false</PrioritizeLargeFiles>
         </Path>
         <Path>
-            <Path>C:\temp\logs\delete</Path>
+            <Location>C:\temp\logs\delete</Location>
             <Enabled>true</Enabled>
-            <IncludeSubfolders>false</IncludeSubfolders>
-            <ExcludePatterns>
-                <Pattern>.*\.log</Pattern>
-            </ExcludePatterns>
             <RetentionDays>5</RetentionDays>
+            <IncludeSubfolders>true</IncludeSubfolders>
             <ArchiveBeforeDelete>false</ArchiveBeforeDelete>
-            <ArchivePath></ArchivePath>
+            <PrioritizeLargeFiles>true</PrioritizeLargeFiles>
         </Path>
     </Paths>
-    <Heapdump>
-        <Enabled>true</Enabled>
-        <Path>C:\data\heapdumps</Path>
-        <RetentionDays>14</RetentionDays>
-    </Heapdump>
-</Housekeeping>
+</HousekeepingConfig>
