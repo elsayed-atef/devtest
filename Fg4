@@ -8,6 +8,9 @@ param (
 # Extract Global Settings
 $logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
 $maxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
+$cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
+$peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
+$sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
 
 # Function to Log Messages with Timestamp and Log Level
 function Log-Message {
@@ -184,52 +187,55 @@ function Perform-Housekeeping {
     Log-Message -Level "Info" -Message "Completed housekeeping for $path. Files deleted: $filesDeleted, Folders deleted: $foldersDeleted."
 }
 
-# Performance Monitoring
-$startTime = Get-Date
+# Main Loop
+while ($true) {
+    $startTime = Get-Date
 
-# Rotate the Log File if Needed
-Rotate-Log -logFilePath $logFilePath -maxLogSizeMB $maxLogSizeMB
+    # Rotate the Log File if Needed
+    Rotate-Log -logFilePath $logFilePath -maxLogSizeMB $maxLogSizeMB
 
-# Log the Start of the Housekeeping Script
-Log-Message -Level "Info" -Message "Housekeeping script started."
+    # Log the Start of the Housekeeping Script
+    Log-Message -Level "Info" -Message "Housekeeping script started."
 
-# Peak Hours Configuration
-$peakHoursEnabled = Convert-XmlBoolean -xmlValue $config.HousekeepingConfig.Settings.PeakHours.Enabled
-$timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange | ForEach-Object {
-    [PSCustomObject]@{
-        Start = $_.Start
-        End = $_.End
+    # Process All Paths from XML
+    foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
+        if ([bool]$pathConfig.Enabled) {
+            Perform-Housekeeping `
+                -path $pathConfig.Location `
+                -retentionDays [int]$pathConfig.RetentionDays `
+                -includeSubfolders [bool]$pathConfig.IncludeSubfolders `
+                -archiveBeforeDelete [bool]$pathConfig.ArchiveBeforeDelete `
+                -archivePath $pathConfig.ArchivePath `
+                -excludePatterns $pathConfig.ExcludePatterns.Pattern `
+                -checkEmptyFolder [bool]$pathConfig.CheckEmptyFolder
+        } else {
+            Log-Message -Level "Info" -Message "Skipping path $($pathConfig.Location) as it is disabled."
+        }
     }
-}
 
-if ($peakHoursEnabled) {
-    $currentTime = Get-Date
-    if (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges) {
-        Log-Message -Level "Info" -Message "Current time is within peak hours. Housekeeping script is paused."
-        exit
+    # Determine Sleep Time
+    $endTime = Get-Date
+    $executionTime = $endTime - $startTime
+    Log-Message -Level "Info" -Message "Housekeeping script completed. Execution time: $($executionTime.TotalMinutes) minutes."
+
+    if ($peakHoursEnabled -and $sleepUntilPeakHoursEnd) {
+        $currentTime = Get-Date
+        if (Is-In-PeakHours -currentTime $currentTime -timeRanges $config.HousekeepingConfig.Settings.PeakHours.TimeRange) {
+            # Calculate the sleep time until the end of the peak hours
+            $endPeakHours = $config.HousekeepingConfig.Settings.PeakHours.TimeRange | Where-Object {
+                [datetime]::ParseExact($_.End, "HH:mm", $null) -gt $currentTime.TimeOfDay
+            } | Sort-Object Start | Select-Object -First 1
+
+            if ($endPeakHours) {
+                $endTimePeak = [datetime]::ParseExact($endPeakHours.End, "HH:mm", $null)
+                $sleepTime = ($endTimePeak - $currentTime.TimeOfDay).TotalMinutes
+                Log-Message -Level "Info" -Message "Sleeping until peak hours end. Sleeping for $sleepTime minutes."
+                Start-Sleep -Minutes $sleepTime
+            }
+        }
     }
+
+    # Sleep for configured interval
+    Log-Message -Level "Info" -Message "Sleeping for $cleanupIntervalHours hours."
+    Start-Sleep -Hours $cleanupIntervalHours
 }
-
-# Loop through each Path in the Configuration
-foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
-    $includeSubfolders = Convert-XmlBoolean -xmlValue $pathConfig.IncludeSubfolders
-    $archiveBeforeDelete = Convert-XmlBoolean -xmlValue $pathConfig.ArchiveBeforeDelete
-    $checkEmptyFolder = Convert-XmlBoolean -xmlValue $pathConfig.CheckEmptyFolder
-
-    if ($pathConfig.Enabled -eq "true") {
-        Perform-Housekeeping -path $pathConfig.Location `
-                            -retentionDays $pathConfig.RetentionDays `
-                            -includeSubfolders $includeSubfolders `
-                            -archiveBeforeDelete $archiveBeforeDelete `
-                            -archivePath $pathConfig.ArchivePath `
-                            -excludePatterns $pathConfig.ExcludePatterns.Pattern `
-                            -checkEmptyFolder $checkEmptyFolder
-    } else {
-        Log-Message -Level "Info" -Message "Skipping disabled path $($pathConfig.Location)."
-    }
-}
-
-# Log the End of the Housekeeping Script
-$endTime = Get-Date
-$executionTime = $endTime - $startTime
-Log-Message -Level "Info" -Message "Housekeeping script completed. Execution time: $($executionTime.TotalMinutes) minutes."
