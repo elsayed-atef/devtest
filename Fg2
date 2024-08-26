@@ -7,7 +7,6 @@
         <ArchiveBeforeDelete>true</ArchiveBeforeDelete>
         <ArchivePath>C:\archive</ArchivePath>
         <InteractiveMode>false</InteractiveMode>
-        <DiskUsageThreshold>85</DiskUsageThreshold>
     </Settings>
 
     <Paths>
@@ -19,6 +18,11 @@
             <ArchiveBeforeDelete>true</ArchiveBeforeDelete>
             <ArchivePath>C:\archive\logs</ArchivePath>
             <PrioritizeLargeFiles>true</PrioritizeLargeFiles>
+            <ExcludePatterns>
+                <Pattern>*\*.tmp</Pattern> <!-- Excludes files with .tmp extension in all subfolders -->
+                <Pattern>*\*.bak</Pattern> <!-- Excludes files with .bak extension in all subfolders -->
+                <Pattern>*.old</Pattern> <!-- Excludes files with .old extension -->
+            </ExcludePatterns>
         </Path>
         <Path>
             <Location>C:\temp\logs\keep</Location>
@@ -28,6 +32,9 @@
             <ArchiveBeforeDelete>true</ArchiveBeforeDelete>
             <ArchivePath>C:\archive\logs\keep</ArchivePath>
             <PrioritizeLargeFiles>false</PrioritizeLargeFiles>
+            <ExcludePatterns>
+                <Pattern>*.old</Pattern> <!-- Excludes files with .old extension -->
+            </ExcludePatterns>
         </Path>
         <Path>
             <Location>C:\temp\logs\delete</Location>
@@ -35,7 +42,11 @@
             <RetentionDays>5</RetentionDays>
             <IncludeSubfolders>true</IncludeSubfolders>
             <ArchiveBeforeDelete>false</ArchiveBeforeDelete>
+            <ArchivePath>C:\archive\logs\delete</ArchivePath>
             <PrioritizeLargeFiles>true</PrioritizeLargeFiles>
+            <ExcludePatterns>
+                <Pattern>*.log</Pattern> <!-- Excludes files with .log extension -->
+            </ExcludePatterns>
         </Path>
     </Paths>
 </HousekeepingConfig>
