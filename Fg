@@ -1,42 +1,49 @@
-# Function to Check if Current Time is Within Any Peak Hour Range
 function Is-In-PeakHours {
     param (
-        [DateTime]$currentTime,
+        [datetime]$currentTime,
         [array]$timeRanges
     )
-
     foreach ($range in $timeRanges) {
         $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
         $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
 
-        # Handle cases where end time is on the next day
-        if ($endTime -lt $startTime) {
-            $currentTimeInRange = $currentTime.TimeOfDay -ge $startTime.TimeOfDay -or $currentTime.TimeOfDay -lt $endTime.TimeOfDay
-        } else {
-            $currentTimeInRange = $currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay
-        }
-
-        if ($currentTimeInRange) {
+        if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
             return $true
         }
     }
-
     return $false
 }
 
-# Peak Hours Configuration
-$peakHoursEnabled = Convert-XmlBoolean -xmlValue $config.HousekeepingConfig.Settings.PeakHours.Enabled
-$timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange | ForEach-Object {
-    [PSCustomObject]@{
-        Start = $_.Start
-        End = $_.End
-    }
-}
+while ($true) {
+    $config = [xml](Get-Content "HousekeepingConfig.xml")
 
-if ($peakHoursEnabled) {
+    # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
     $currentTime = Get-Date
-    if (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges) {
-        Log-Message -Level "Info" -Message "Current time is within peak hours. Housekeeping script is paused."
-        exit
+    $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
+    $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
+    $timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range
+
+    if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
+        if ($sleepUntilPeakHoursEnd) {
+            # Calculate the remaining sleep time until the end of the peak hours
+            $endPeakHours = $timeRanges | Where-Object {
+                $endTime = [datetime]::ParseExact($_.End, "HH:mm", $null)
+                $endTime.TimeOfDay -gt $currentTime.TimeOfDay
+            } | Sort-Object Start | Select-Object -First 1
+
+            if ($endPeakHours) {
+                $endTimePeak = [datetime]::ParseExact($endPeakHours.End, "HH:mm", $null)
+                $sleepTime = ($endTimePeak.TimeOfDay - $currentTime.TimeOfDay).TotalMinutes
+                Log-Message -Level "Info" -Message "Sleeping until peak hours end. Sleeping for $sleepTime minutes."
+                Start-Sleep -Minutes $sleepTime
+            }
+        }
     }
+
+    # Perform Housekeeping tasks here
+
+    # Sleep for configured interval
+    $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
+    Log-Message -Level "Info" -Message "Sleeping for $cleanupIntervalHours hours."
+    Start-Sleep -Seconds ($cleanupIntervalHours * 3600)
 }
