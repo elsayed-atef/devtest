@@ -9,21 +9,18 @@ function Log-Message {
     Add-Content -Path $LogFilePath -Value $logEntry
 }
 
-# Function to Check if Current Time is Within Peak Hours
-function Is-In-PeakHours {
+# Function to Convert XML Boolean Values to PowerShell Booleans
+function Convert-ToBoolean {
     param (
-        [datetime]$currentTime,
-        [array]$timeRanges
+        [string]$value
     )
-    foreach ($range in $timeRanges) {
-        $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
-        $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
-
-        if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
-            return $true
-        }
+    if ($value -eq "true") {
+        return $true
+    } elseif ($value -eq "false") {
+        return $false
+    } else {
+        return $null
     }
-    return $false
 }
 
 # Function to Perform Housekeeping Tasks
@@ -36,14 +33,14 @@ function Perform-Housekeeping {
     foreach ($folder in $config.HousekeepingConfig.Paths.Path) {
         $path = $folder.Location
         $retentionDays = [int]$folder.RetentionDays
-        $includeSubfolders = [bool]$folder.IncludeSubfolders
-        $archiveEnabled = [bool]$folder.Archive.Enabled
+        $includeSubfolders = Convert-ToBoolean $folder.IncludeSubfolders
+        $archiveEnabled = Convert-ToBoolean $folder.Archive.Enabled
         $archivePath = $folder.Archive.Path
-        $enabled = [bool]$folder.Enabled
+        $enabled = Convert-ToBoolean $folder.Enabled
         $excludePatterns = $folder.ExcludePatterns.Pattern
 
-        Log-Message -Level "Debug" -Message "Processing folder: $path"
-        Log-Message -Level "Debug" -Message "Enabled: $enabled, Retention Days: $retentionDays, Include Subfolders: $includeSubfolders, Archive Enabled: $archiveEnabled, Archive Path: $archivePath"
+        Log-Message -Level "Debug" -Message "Raw XML Values: Location: $path, Enabled: $($folder.Enabled), IncludeSubfolders: $($folder.IncludeSubfolders), ArchiveEnabled: $($folder.Archive.Enabled)"
+        Log-Message -Level "Debug" -Message "Parsed Values: Enabled: $enabled, IncludeSubfolders: $includeSubfolders, ArchiveEnabled: $archiveEnabled, RetentionDays: $retentionDays, ArchivePath: $archivePath"
         Log-Message -Level "Debug" -Message "Exclude Patterns: $($excludePatterns -join ', ')"
 
         if (-not $enabled) {
@@ -100,39 +97,13 @@ while ($true) {
     $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
     $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
     $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
-    $DryRun = [bool]$config.HousekeepingConfig.Settings.DryRun
+    $DryRun = Convert-ToBoolean $config.HousekeepingConfig.Settings.DryRun
 
     # Log parsed configuration
-    Log-Message -Level "Debug" -Message "DryRun: $DryRun"
+    Log-Message -Level "Debug" -Message "Raw XML DryRun Value: $($config.HousekeepingConfig.Settings.DryRun)"
+    Log-Message -Level "Debug" -Message "Parsed DryRun Value: $DryRun"
     Log-Message -Level "Debug" -Message "MaxLogSizeMB: $MaxLogSizeMB"
     Log-Message -Level "Debug" -Message "CleanupIntervalHours: $cleanupIntervalHours"
-
-    # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
-    $currentTime = Get-Date
-    $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
-    $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
-    $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
-
-    Log-Message -Level "Debug" -Message "PeakHours Enabled: $peakHoursEnabled"
-    if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
-        Log-Message -Level "Debug" -Message "Current time is within Peak Hours."
-
-        if ($sleepUntilPeakHoursEnd) {
-            # Calculate the remaining sleep time until the end of the peak hours
-            $endPeakHours = $timeRanges | Where-Object {
-                $endTime = [datetime]::ParseExact($_.End, "HH:mm", $null)
-                $endTime.TimeOfDay -gt $currentTime.TimeOfDay
-            } | Sort-Object Start | Select-Object -First 1
-
-            if ($endPeakHours) {
-                $endTimePeak = [datetime]::ParseExact($endPeakHours.End, "HH:mm", $null)
-                $sleepTime = ($endTimePeak.TimeOfDay - $currentTime.TimeOfDay).TotalMinutes
-                Log-Message -Level "Info" -Message "Sleeping until peak hours end. Sleeping for $sleepTime minutes."
-                Start-Sleep -Minutes $sleepTime
-                continue
-            }
-        }
-    }
 
     # Perform Housekeeping
     Log-Message -Level "Info" -Message "Starting housekeeping tasks..."
