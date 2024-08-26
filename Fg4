@@ -200,9 +200,12 @@ while ($true) {
     # Process All Paths from XML
     foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
         if ([bool]$pathConfig.Enabled) {
+            # Properly cast RetentionDays to integer
+            $retentionDays = [int]$pathConfig.RetentionDays
+
             Perform-Housekeeping `
                 -path $pathConfig.Location `
-                -retentionDays [int]$pathConfig.RetentionDays `
+                -retentionDays $retentionDays `
                 -includeSubfolders (Convert-XmlBoolean $pathConfig.IncludeSubfolders) `
                 -archiveBeforeDelete (Convert-XmlBoolean $pathConfig.ArchiveBeforeDelete) `
                 -archivePath $pathConfig.ArchivePath `
@@ -218,11 +221,12 @@ while ($true) {
     $executionTime = $endTime - $startTime
     Log-Message -Level "Info" -Message "Housekeeping script completed. Execution time: $($executionTime.TotalMinutes) minutes."
 
-    if ($peakHoursEnabled -and $sleepUntilPeakHoursEnd) {
-        $currentTime = Get-Date
-        if (Is-In-PeakHours -currentTime $currentTime -timeRanges $config.HousekeepingConfig.Settings.PeakHours.TimeRange) {
-            # Calculate the sleep time until the end of the peak hours
-            $endPeakHours = $config.HousekeepingConfig.Settings.PeakHours.TimeRange | Where-Object {
+    # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
+    $currentTime = Get-Date
+    if ($peakHoursEnabled -and Is-In-PeakHours -currentTime $currentTime -timeRanges $config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range) {
+        if ($sleepUntilPeakHoursEnd) {
+            # Calculate the remaining sleep time until the end of the peak hours
+            $endPeakHours = $config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range | Where-Object {
                 [datetime]::ParseExact($_.End, "HH:mm", $null) -gt $currentTime.TimeOfDay
             } | Sort-Object Start | Select-Object -First 1
 
