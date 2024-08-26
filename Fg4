@@ -122,7 +122,7 @@ while ($true) {
                 $endTimePeak = [datetime]::ParseExact($endPeakHours.End, "HH:mm", $null)
                 $sleepTime = ($endTimePeak.TimeOfDay - $currentTime.TimeOfDay).TotalMinutes
                 Log-Message -Level "Info" -Message "Sleeping until peak hours end. Sleeping for $sleepTime minutes."
-                Start-Sleep -Minutes $sleepTime
+                Start-Sleep -Seconds ([math]::Round($sleepTime * 60))
                 continue
             }
         }
