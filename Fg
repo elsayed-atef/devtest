@@ -14,7 +14,7 @@ function Log-Message {
     Add-Content -Path $LogFilePath -Value $logEntry
 }
 
-# Test Time Parsing with Hardcoded Values
+# Function to Test Time Parsing with Error Handling
 function Test-TimeParsing {
     param (
         [string]$startTimeStr,
@@ -23,12 +23,16 @@ function Test-TimeParsing {
 
     try {
         $startTime = [datetime]::ParseExact($startTimeStr, "HH:mm", $null).TimeOfDay
-        $endTime = [datetime]::ParseExact($endTimeStr, "HH:mm", $null).TimeOfDay
-        
         Log-Message -Level "Info" -Message "Successfully parsed start time: $startTimeStr as $startTime"
+    } catch {
+        Log-Message -Level "Error" -Message "Failed to parse start time: $($_.Exception.Message). Start: $startTimeStr"
+    }
+
+    try {
+        $endTime = [datetime]::ParseExact($endTimeStr, "HH:mm", $null).TimeOfDay
         Log-Message -Level "Info" -Message "Successfully parsed end time: $endTimeStr as $endTime"
     } catch {
-        Log-Message -Level "Error" -Message "Failed to parse time: $($_.Exception.Message). Start: $startTimeStr, End: $endTimeStr"
+        Log-Message -Level "Error" -Message "Failed to parse end time: $($_.Exception.Message). End: $endTimeStr"
     }
 }
 
