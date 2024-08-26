@@ -1,3 +1,6 @@
+# Define a path for the log file
+$LogFilePath = "D:\data\logs\time_parsing_debug.log"
+
 # Function to Log Messages with Timestamp and Log Level
 function Log-Message {
     param (
@@ -11,57 +14,32 @@ function Log-Message {
     Add-Content -Path $LogFilePath -Value $logEntry
 }
 
-# Function to Test Time Parsing
+# Test Time Parsing with Hardcoded Values
 function Test-TimeParsing {
     param (
-        [xml]$config
+        [string]$startTimeStr,
+        [string]$endTimeStr
     )
 
-    $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
-
-    foreach ($range in $timeRanges) {
-        try {
-            $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null).TimeOfDay
-            $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null).TimeOfDay
-
-            # Adjust for time ranges crossing midnight
-            if ($endTime -lt $startTime) {
-                # Time range crosses midnight
-                $currentTime = Get-Date -Format "HH:mm:ss"
-                $currentTimeOfDay = [datetime]::ParseExact($currentTime, "HH:mm:ss", $null).TimeOfDay
-
-                if ($currentTimeOfDay -ge $startTime -or $currentTimeOfDay -lt $endTime) {
-                    Log-Message -Level "Info" -Message "Current time $currentTimeOfDay is within crossing time range Start=$startTime, End=$endTime"
-                } else {
-                    Log-Message -Level "Info" -Message "Current time $currentTimeOfDay is outside the crossing time range Start=$startTime, End=$endTime"
-                }
-            } else {
-                # Normal time range
-                $currentTime = Get-Date -Format "HH:mm:ss"
-                $currentTimeOfDay = [datetime]::ParseExact($currentTime, "HH:mm:ss", $null).TimeOfDay
-
-                if ($currentTimeOfDay -ge $startTime -and $currentTimeOfDay -lt $endTime) {
-                    Log-Message -Level "Info" -Message "Current time $currentTimeOfDay is within time range Start=$startTime, End=$endTime"
-                } else {
-                    Log-Message -Level "Info" -Message "Current time $currentTimeOfDay is outside the time range Start=$startTime, End=$endTime"
-                }
-            }
-        } catch {
-            Log-Message -Level "Error" -Message "Failed to parse time: $($_.Exception.Message). Start: $($range.Start), End: $($range.End)"
-        }
+    try {
+        $startTime = [datetime]::ParseExact($startTimeStr, "HH:mm", $null).TimeOfDay
+        $endTime = [datetime]::ParseExact($endTimeStr, "HH:mm", $null).TimeOfDay
+        
+        Log-Message -Level "Info" -Message "Successfully parsed start time: $startTimeStr as $startTime"
+        Log-Message -Level "Info" -Message "Successfully parsed end time: $endTimeStr as $endTime"
+    } catch {
+        Log-Message -Level "Error" -Message "Failed to parse time: $($_.Exception.Message). Start: $startTimeStr, End: $endTimeStr"
     }
 }
 
 # Main Test Function
 function Main {
-    # Load XML Configuration
-    $config = [xml](Get-Content "HousekeepingConfig.xml")
-
-    # Define LogFilePath for this test
-    $LogFilePath = "D:\data\logs\time_parsing_test.log"
+    # Hardcoded time values for testing
+    $testStartTime = "06:00"
+    $testEndTime = "17:00"
 
     # Test Time Parsing
-    Test-TimeParsing -config $config
+    Test-TimeParsing -startTimeStr $testStartTime -endTimeStr $testEndTime
 }
 
 # Run the main test function
