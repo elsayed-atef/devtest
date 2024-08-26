@@ -7,7 +7,7 @@ param (
 
 # Extract Global Settings
 $logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
-$maxLogSizeMB = $config.HousekeepingConfig.Settings.MaxLogSizeMB
+$maxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
 $interactiveMode = [bool]$config.HousekeepingConfig.Settings.InteractiveMode
 
 # Function to Log Messages with Timestamp and Log Level
@@ -19,6 +19,8 @@ function Log-Message {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "$timestamp [$Level] $Message"
     $logEntry | Out-File -FilePath $logFilePath -Append
+    # Check and rotate log file if needed
+    Rotate-Log -logFilePath $logFilePath -maxLogSizeMB $maxLogSizeMB
 }
 
 # Function to Perform Log Rotation
