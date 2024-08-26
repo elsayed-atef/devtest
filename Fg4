@@ -10,7 +10,6 @@ function Log-Message {
 
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "$timestamp [$Level] $Message"
-    Write-Output $logEntry
     Add-Content -Path $LogFilePath -Value $logEntry
 }
 
@@ -57,8 +56,8 @@ function Perform-Housekeeping {
         [bool]$DryRun
     )
 
-    foreach ($folder in $config.HousekeepingConfig.Folders.Folder) {
-        $path = $folder.Path
+    foreach ($folder in $config.housekeepingconfig.paths.path) {
+        $path = $folder.location
         $retentionDays = [int]$folder.RetentionDays
         $includeSubfolders = [bool]$folder.IncludeSubfolders
         $archiveEnabled = [bool]$folder.Archive.Enabled
@@ -127,15 +126,15 @@ while ($true) {
     }
 
     # Extract global settings from XML
-    $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
-    $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
-    $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
-    $DryRun = $config.HousekeepingConfig.Settings.DryRun -eq "true"
+    $LogFilePath = $config.housekeepingconfig.Settings.LogFilePath
+    $MaxLogSizeMB = [int]$config.housekeepingconfig.Settings.MaxLogSizeMB
+    $cleanupIntervalHours = [int]$config.housekeepingconfig.Settings.CleanupIntervalHours
+    $DryRun = $config.housekeepingconfig.Settings.DryRun -eq "true"
 
     # Extract Peak Hours settings
-    $peakHoursEnabled = $config.HousekeepingConfig.Settings.PeakHours.Enabled -eq "true"
-    $sleepUntilPeakHoursEnd = $config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd -eq "true"
-    $timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range
+    $peakHoursEnabled = $config.housekeepingconfig.Settings.PeakHours.Enabled -eq "true"
+    $sleepUntilPeakHoursEnd = $config.housekeepingconfig.Settings.PeakHours.SleepUntilEnd -eq "true"
+    $timeRanges = $config.housekeepingconfig.Settings.PeakHours.TimeRange.Range
 
     Log-Message -Level "Debug" -Message "Peak hours enabled: $peakHoursEnabled"
     Log-Message -Level "Debug" -Message "Sleep until peak hours end: $sleepUntilPeakHoursEnd"
