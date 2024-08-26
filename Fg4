@@ -29,12 +29,6 @@ function Rotate-Log {
     }
 }
 
-# Rotate the Log File if Needed
-Rotate-Log -logFilePath $logFilePath -maxLogSizeMB $maxLogSizeMB
-
-# Log the Start of the Housekeeping Script
-Write-Output "Housekeeping script started at $(Get-Date)." | Out-File -FilePath $logFilePath -Append
-
 # Function to Check Exclusions
 function Is-Excluded {
     param (
@@ -58,7 +52,7 @@ function Convert-XmlBoolean {
     return $xmlValue -eq "true"
 }
 
-# Function to Perform Housekeeping
+# Function to Perform Housekeeping with Retry Logic
 function Perform-Housekeeping {
     param (
         [string]$path,
@@ -70,47 +64,73 @@ function Perform-Housekeeping {
         [string[]]$excludePatterns
     )
 
-    # Log the Start of Housekeeping for a Specific Path
-    Write-Output "Starting housekeeping for $path with retention of $retentionDays days." | Out-File -FilePath $logFilePath -Append
+    # Retry logic for transient errors
+    $retryCount = 3
+    $retryDelay = 5
 
-    # Get Files to Cleanup, Prioritize Large Files if Enabled
-    $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders | Where-Object {
-        $_.LastWriteTime -lt (Get-Date).AddDays(-$retentionDays) -and
-        -not (Is-Excluded -path $_.FullName -patterns $excludePatterns)
-    }
+    for ($i = 0; $i -lt $retryCount; $i++) {
+        try {
+            # Log the Start of Housekeeping for a Specific Path
+            Write-Output "Starting housekeeping for $path with retention of $retentionDays days." | Out-File -FilePath $logFilePath -Append
 
-    if ($prioritizeLargeFiles) {
-        $files = $files | Sort-Object Length -Descending
-    }
-
-    foreach ($file in $files) {
-        if ($interactiveMode -and -not $DryRun) {
-            $response = Read-Host "Do you want to delete $($file.FullName)? (Y/N)"
-            if ($response -ne 'Y') {
-                Write-Output "Skipped file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
-                continue
-            }
-        }
-
-        if ($DryRun) {
-            Write-Output "Dry Run: Would archive file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
-            Write-Output "Dry Run: Would delete file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
-        } else {
-            if ($archiveBeforeDelete) {
-                $zipPath = Join-Path -Path $archivePath -ChildPath "$($file.Name).zip"
-                Compress-Archive -Path $file.FullName -DestinationPath $zipPath
-                Write-Output "Archived file $($file.FullName) to $zipPath." | Out-File -FilePath $logFilePath -Append
+            # Get Files to Cleanup, Prioritize Large Files if Enabled
+            $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders | Where-Object {
+                $_.LastWriteTime -lt (Get-Date).AddDays(-$retentionDays) -and
+                -not (Is-Excluded -path $_.FullName -patterns $excludePatterns)
             }
 
-            # Delete the file
-            Remove-Item $file.FullName -Force
-            Write-Output "Deleted file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
+            if ($prioritizeLargeFiles) {
+                $files = $files | Sort-Object Length -Descending
+            }
+
+            foreach ($file in $files) {
+                if ($interactiveMode -and -not $DryRun) {
+                    $response = Read-Host "Do you want to delete $($file.FullName)? (Y/N)"
+                    if ($response -ne 'Y') {
+                        Write-Output "Skipped file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
+                        continue
+                    }
+                }
+
+                if ($DryRun) {
+                    Write-Output "Dry Run: Would archive file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
+                    Write-Output "Dry Run: Would delete file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
+                } else {
+                    if ($archiveBeforeDelete) {
+                        $zipPath = Join-Path -Path $archivePath -ChildPath "$($file.Name).zip"
+                        Compress-Archive -Path $file.FullName -DestinationPath $zipPath
+                        Write-Output "Archived file $($file.FullName) to $zipPath." | Out-File -FilePath $logFilePath -Append
+                    }
+
+                    # Delete the file
+                    Remove-Item $file.FullName -Force
+                    Write-Output "Deleted file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
+                }
+            }
+
+            # Log Completion of Housekeeping for the Path
+            Write-Output "Completed housekeeping for $path." | Out-File -FilePath $logFilePath -Append
+            return
+        } catch {
+            Write-Output "Error during housekeeping for $path: $_. Exception: $_.Exception.Message" | Out-File -FilePath $logFilePath -Append
+            if ($i -lt ($retryCount - 1)) {
+                Write-Output "Retrying in $retryDelay seconds..." | Out-File -FilePath $logFilePath -Append
+                Start-Sleep -Seconds $retryDelay
+            } else {
+                Write-Output "Failed after $retryCount attempts. Skipping path $path." | Out-File -FilePath $logFilePath -Append
+            }
         }
     }
-
-    # Log Completion of Housekeeping for the Path
-    Write-Output "Completed housekeeping for $path." | Out-File -FilePath $logFilePath -Append
 }
+
+# Performance Monitoring
+$startTime = Get-Date
+
+# Rotate the Log File if Needed
+Rotate-Log -logFilePath $logFilePath -maxLogSizeMB $maxLogSizeMB
+
+# Log the Start of the Housekeeping Script
+Write-Output "Housekeeping script started at $(Get-Date)." | Out-File -FilePath $logFilePath -Append
 
 # Loop through each Path in the Configuration
 foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
@@ -132,4 +152,7 @@ foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
 }
 
 # Log the End of the Housekeeping Script
+$endTime = Get-Date
+$executionTime = $endTime - $startTime
 Write-Output "Housekeeping script completed at $(Get-Date)." | Out-File -FilePath $logFilePath -Append
+Write-Output "Script executed in $($executionTime.TotalSeconds) seconds." | Out-File -FilePath $logFilePath -Append
