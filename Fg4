@@ -203,11 +203,11 @@ while ($true) {
             Perform-Housekeeping `
                 -path $pathConfig.Location `
                 -retentionDays [int]$pathConfig.RetentionDays `
-                -includeSubfolders [bool]$pathConfig.IncludeSubfolders `
-                -archiveBeforeDelete [bool]$pathConfig.ArchiveBeforeDelete `
+                -includeSubfolders (Convert-XmlBoolean $pathConfig.IncludeSubfolders) `
+                -archiveBeforeDelete (Convert-XmlBoolean $pathConfig.ArchiveBeforeDelete) `
                 -archivePath $pathConfig.ArchivePath `
                 -excludePatterns $pathConfig.ExcludePatterns.Pattern `
-                -checkEmptyFolder [bool]$pathConfig.CheckEmptyFolder
+                -checkEmptyFolder (Convert-XmlBoolean $pathConfig.CheckEmptyFolder)
         } else {
             Log-Message -Level "Info" -Message "Skipping path $($pathConfig.Location) as it is disabled."
         }
@@ -237,5 +237,5 @@ while ($true) {
 
     # Sleep for configured interval
     Log-Message -Level "Info" -Message "Sleeping for $cleanupIntervalHours hours."
-    Start-Sleep -Hours $cleanupIntervalHours
+    Start-Sleep -Seconds ($cleanupIntervalHours * 3600)
 }
