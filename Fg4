@@ -81,14 +81,16 @@ function Perform-Housekeeping {
 
     # Get Files and Folders to Cleanup
     $items = Get-ChildItem -Path $path -Recurse:$includeSubfolders
+    $filesDeleted = 0
+    $foldersDeleted = 0
 
     foreach ($item in $items) {
         # Skip excluded items
         if (Is-Excluded -path $item.FullName -patterns $excludePatterns) {
+            Log-Message -Level "Debug" -Message "Skipped excluded item: $($item.FullName)."
             continue
         }
 
-        # Determine the item age in days
         if (-not $item.PSIsContainer) {
             # For files, use LastWriteTime
             $itemAgeDays = ($currentDate - $item.LastWriteTime).Days
@@ -109,6 +111,7 @@ function Perform-Housekeeping {
                     }
                     # Delete the file
                     Remove-Item $item.FullName -Force
+                    $filesDeleted++
                     Log-Message -Level "Info" -Message "Deleted file $($item.FullName)."
                 }
             }
@@ -128,6 +131,7 @@ function Perform-Housekeeping {
                     } else {
                         # Delete the empty folder
                         Remove-Item $folder.FullName -Force
+                        $foldersDeleted++
                         Log-Message -Level "Info" -Message "Deleted empty folder $($folder.FullName)."
                     }
                 }
@@ -136,7 +140,7 @@ function Perform-Housekeeping {
     }
 
     # Log Completion of Housekeeping for the Path
-    Log-Message -Level "Info" -Message "Completed housekeeping for $path."
+    Log-Message -Level "Info" -Message "Completed housekeeping for $path. Files deleted: $filesDeleted, Folders deleted: $foldersDeleted."
 }
 
 # Performance Monitoring
