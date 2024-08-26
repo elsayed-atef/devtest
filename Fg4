@@ -1,155 +1,111 @@
-param (
-    [string]$ConfigFile = "D:\data\housekeeping_config.xml",
-    [switch]$Parallel,
-    [switch]$DryRun,
-    [string]$MainLogFile = "D:\data\temp\housekeeping.log"
-)
+# Load XML Configuration
+[xml]$config = Get-Content "D:\data\temp\HousekeepingConfig.xml"
 
-# Function to write logs
-function Write-Log {
+# Extract Global Settings
+$logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
+$maxLogSizeMB = $config.HousekeepingConfig.Settings.MaxLogSizeMB
+$diskUsageThreshold = $config.HousekeepingConfig.Settings.DiskUsageThreshold
+$interactiveMode = [bool]$config.HousekeepingConfig.Settings.InteractiveMode
+
+# Function to Perform Log Rotation
+function Rotate-Log {
     param (
-        [string]$Message,
-        [string]$Level = "INFO",
-        [string]$LogFile
+        [string]$logFilePath,
+        [int]$maxLogSizeMB
     )
 
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logMessage = "$timestamp [$Level] $Message"
-
-    [System.IO.File]::AppendAllText($LogFile, "$logMessage`r`n")
+    if (Test-Path $logFilePath) {
+        $logFileSizeMB = (Get-Item $logFilePath).Length / 1MB
+        if ($logFileSizeMB -ge $maxLogSizeMB) {
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $archiveFilePath = Join-Path -Path (Split-Path $logFilePath) -ChildPath "housekeeping_$timestamp.log"
+            Rename-Item $logFilePath $archiveFilePath
+            Compress-Archive -Path $archiveFilePath -DestinationPath "$archiveFilePath.zip"
+            Remove-Item $archiveFilePath
+        }
+    }
 }
 
-# Function to perform cleanup
-function Perform-Cleanup {
+# Rotate the Log File if Needed
+Rotate-Log -logFilePath $logFilePath -maxLogSizeMB $maxLogSizeMB
+
+# Log the Start of the Housekeeping Script
+Write-Output "Housekeeping script started at $(Get-Date)." | Out-File -FilePath $logFilePath -Append
+
+# Function to Check Disk Usage
+function Check-DiskUsage {
+    $drive = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Used -gt ($diskUsageThreshold * $_.Used / 100) }
+    return $drive
+}
+
+# Function to Perform Housekeeping
+function Perform-Housekeeping {
     param (
-        [string]$Path,
-        [bool]$IncludeSubfolders,
-        [string[]]$ExcludePatterns,
-        [int]$RetentionDays,
-        [bool]$ArchiveBeforeDelete,
-        [string]$ArchivePath,
-        [switch]$DryRun,
-        [string]$LogFile
+        [string]$path,
+        [int]$retentionDays,
+        [bool]$includeSubfolders,
+        [bool]$archiveBeforeDelete,
+        [string]$archivePath,
+        [bool]$prioritizeLargeFiles
     )
 
-    Write-Log "Starting cleanup for path: $Path with retention period: $RetentionDays days." -Level "INFO" -LogFile $LogFile
+    # Log the Start of Housekeeping for a Specific Path
+    Write-Output "Starting housekeeping for $path with retention of $retentionDays days." | Out-File -FilePath $logFilePath -Append
 
-    $RetentionDate = (Get-Date).AddDays(-$RetentionDays)
-    $files = Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | 
-             Where-Object { $_.LastWriteTime -lt $RetentionDate }
-
-    if ($ExcludePatterns) {
-        foreach ($pattern in $ExcludePatterns) {
-            Write-Log "Excluding files matching pattern: $pattern" -Level "DEBUG" -LogFile $LogFile
-            $files = $files | Where-Object { $_.FullName -notmatch $pattern }
-        }
+    # Get Files to Cleanup, Prioritize Large Files if Enabled
+    $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders | Where-Object {
+        $_.LastWriteTime -lt (Get-Date).AddDays(-$retentionDays)
     }
 
-    if ($DryRun) {
-        Write-Log "DryRun mode enabled. No files will be deleted or moved." -Level "DEBUG" -LogFile $LogFile
-        Write-Log "Files that would be processed:" -Level "DEBUG" -LogFile $LogFile
-        $files | ForEach-Object { Write-Log $_.FullName -Level "DEBUG" -LogFile $LogFile }
-        return
+    if ($prioritizeLargeFiles) {
+        $files = $files | Sort-Object Length -Descending
     }
 
-    if ($ArchiveBeforeDelete -and $ArchivePath) {
-        Write-Log "Archiving files before deletion to $ArchivePath." -Level "INFO" -LogFile $LogFile
-        foreach ($file in $files) {
-            $dest = Join-Path -Path $ArchivePath -ChildPath $file.FullName.TrimStart($Path)
-            $destDir = Split-Path $dest
-            if (-not (Test-Path $destDir)) {
-                New-Item -Path $destDir -ItemType Directory | Out-Null
-                Write-Log "Created directory: $destDir" -Level "DEBUG" -LogFile $LogFile
-            }
-            Move-Item -Path $file.FullName -Destination $dest
-            Write-Log "Moved $($file.FullName) to $dest" -Level "DEBUG" -LogFile $LogFile
-        }
-    }
-
-    $initialSize = ($files | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Log "Initial size of files to be deleted: $([math]::round($initialSize, 2)) MB" -Level "INFO" -LogFile $LogFile
-
-    $deletedCount = 0
     foreach ($file in $files) {
-        Remove-Item -Path $file.FullName -Force -ErrorAction Stop
-        Write-Log "Deleted $($file.FullName)" -Level "DEBUG" -LogFile $LogFile
-        $deletedCount++
-    }
-
-    Write-Log "Deleted $deletedCount files." -Level "INFO" -LogFile $LogFile
-    $finalSize = (Get-ChildItem -Path $Path -Recurse:$IncludeSubfolders -ErrorAction Stop | Measure-Object -Property Length -Sum).Sum / 1MB
-    Write-Log "Final size after deletion: $([math]::round($finalSize, 2)) MB" -Level "INFO" -LogFile $LogFile
-}
-
-# Import the XML configuration
-[xml]$xmlConfig = Get-Content $ConfigFile
-
-# Process each path configuration
-foreach ($pathConfig in $xmlConfig.Housekeeping.Paths.Path) {
-    $path = $pathConfig.Path
-    $enabled = $pathConfig.Enabled -eq "true"
-    $includeSubfolders = [bool]$pathConfig.IncludeSubfolders
-    $excludePatterns = $pathConfig.ExcludePatterns.Pattern
-    $retentionDays = [int]$pathConfig.RetentionDays
-    $archiveBeforeDelete = [bool]$pathConfig.ArchiveBeforeDelete
-    $archivePath = $pathConfig.ArchivePath
-
-    $JobLogFile = [System.IO.Path]::Combine("D:\data\temp\logs", "$($path.GetHashCode()).log")
-
-    Write-Log "Processing path: $path" -Level "DEBUG" -LogFile $MainLogFile
-    Write-Log "Enabled flag for $path is set to $enabled" -Level "DEBUG" -LogFile $MainLogFile
-
-    if (-not $enabled) {
-        Write-Log "Skipping disabled rule for path: $path" -Level "INFO" -LogFile $MainLogFile
-        continue
-    }
-
-    if ($Parallel) {
-        Start-Job -ScriptBlock {
-            param (
-                $Path,
-                $IncludeSubfolders,
-                $ExcludePatterns,
-                $RetentionDays,
-                $ArchiveBeforeDelete,
-                $ArchivePath,
-                $DryRun,
-                $JobLogFile
-            )
-
-            . "D:\scripts\Perform-Cleanup.ps1" -Path $Path -IncludeSubfolders $IncludeSubfolders `
-                                                -ExcludePatterns $ExcludePatterns `
-                                                -RetentionDays $RetentionDays `
-                                                -ArchiveBeforeDelete $ArchiveBeforeDelete `
-                                                -ArchivePath $ArchivePath `
-                                                -DryRun $DryRun `
-                                                -LogFile $JobLogFile
-        } -ArgumentList $path, $includeSubfolders, $excludePatterns, $retentionDays, $archiveBeforeDelete, $archivePath, $DryRun, $JobLogFile
-        Write-Log "Started job for path: $path with log file $JobLogFile" -Level "INFO" -LogFile $MainLogFile
-    } else {
-        . "D:\scripts\Perform-Cleanup.ps1" -Path $path -IncludeSubfolders $includeSubfolders `
-                                            -ExcludePatterns $excludePatterns `
-                                            -RetentionDays $retentionDays `
-                                            -ArchiveBeforeDelete $archiveBeforeDelete `
-                                            -ArchivePath $archivePath `
-                                            -DryRun $DryRun `
-                                            -LogFile $JobLogFile
-    }
-}
-
-# Wait for all parallel jobs to complete
-if ($Parallel) {
-    Get-Job | ForEach-Object {
-        try {
-            $jobResult = Wait-Job -Job $_ -ErrorAction Stop | Receive-Job -ErrorAction Stop
-            Write-Log "Job completed successfully: $($_.Id)" -Level "INFO" -LogFile $MainLogFile
-            $jobResult
-        } catch {
-            Write-Log "Failed to complete job $_. Error: $_" -Level "ERROR" -LogFile $MainLogFile
-        } finally {
-            Remove-Job -Job $_ -ErrorAction SilentlyContinue
+        if ($interactiveMode) {
+            $response = Read-Host "Do you want to delete $($file.FullName)? (Y/N)"
+            if ($response -ne 'Y') {
+                Write-Output "Skipped file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
+                continue
+            }
         }
+
+        if ($archiveBeforeDelete) {
+            $zipPath = Join-Path -Path $archivePath -ChildPath "$($file.Name).zip"
+            Compress-Archive -Path $file.FullName -DestinationPath $zipPath
+            Write-Output "Archived file $($file.FullName) to $zipPath." | Out-File -FilePath $logFilePath -Append
+        }
+
+        # Delete the file
+        Remove-Item $file.FullName -Force
+        Write-Output "Deleted file $($file.FullName)." | Out-File -FilePath $logFilePath -Append
+    }
+
+    # Log Completion of Housekeeping for the Path
+    Write-Output "Completed housekeeping for $path." | Out-File -FilePath $logFilePath -Append
+}
+
+# Disk Usage Check
+$drivesOverThreshold = Check-DiskUsage
+if ($drivesOverThreshold.Count -gt 0) {
+    Write-Output "Drives over disk usage threshold: $($drivesOverThreshold.Name -join ', ')" | Out-File -FilePath $logFilePath -Append
+} else {
+    Write-Output "No drives are over the disk usage threshold." | Out-File -FilePath $logFilePath -Append
+}
+
+# Loop through each Path in the Configuration
+foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
+    if ($pathConfig.Enabled -eq "true") {
+        Perform-Housekeeping -path $pathConfig.Location `
+                            -retentionDays $pathConfig.RetentionDays `
+                            -includeSubfolders $pathConfig.IncludeSubfolders `
+                            -archiveBeforeDelete $pathConfig.ArchiveBeforeDelete `
+                            -archivePath $pathConfig.ArchivePath `
+                            -prioritizeLargeFiles $pathConfig.PrioritizeLargeFiles
+    } else {
+        Write-Output "Skipping disabled path $($pathConfig.Location)." | Out-File -FilePath $logFilePath -Append
     }
 }
 
-Write-Log "Housekeeping completed." -Level "INFO" -LogFile $MainLogFile
+# Log the End of the Housekeeping Script
+Write-Output "Housekeeping script completed at $(Get-Date)." | Out-File -FilePath $logFilePath -Append
