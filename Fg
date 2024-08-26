@@ -1,9 +1,22 @@
+# Logging Function
+function Log-Message {
+    param (
+        [string]$Level,
+        [string]$Message
+    )
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $logEntry = "$timestamp [$Level] $Message"
+    Add-Content -Path $LogFilePath -Value $logEntry
+}
+
+# Function to Check if Current Time is Within Peak Hours
 function Is-In-PeakHours {
     param (
         [datetime]$currentTime,
-        [array]$timeRanges
+        [xml]$timeRanges
     )
-    foreach ($range in $timeRanges) {
+
+    foreach ($range in $timeRanges.Range) {
         $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
         $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
 
@@ -14,19 +27,26 @@ function Is-In-PeakHours {
     return $false
 }
 
+# Main Loop
 while ($true) {
+    # Load XML Configuration
     $config = [xml](Get-Content "HousekeepingConfig.xml")
+
+    # Log file path and settings
+    $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
+    $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
+    $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
 
     # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
     $currentTime = Get-Date
     $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
     $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
-    $timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range
+    $timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange
 
     if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
         if ($sleepUntilPeakHoursEnd) {
             # Calculate the remaining sleep time until the end of the peak hours
-            $endPeakHours = $timeRanges | Where-Object {
+            $endPeakHours = $timeRanges.Range | Where-Object {
                 $endTime = [datetime]::ParseExact($_.End, "HH:mm", $null)
                 $endTime.TimeOfDay -gt $currentTime.TimeOfDay
             } | Sort-Object Start | Select-Object -First 1
@@ -36,14 +56,26 @@ while ($true) {
                 $sleepTime = ($endTimePeak.TimeOfDay - $currentTime.TimeOfDay).TotalMinutes
                 Log-Message -Level "Info" -Message "Sleeping until peak hours end. Sleeping for $sleepTime minutes."
                 Start-Sleep -Minutes $sleepTime
+                continue
             }
         }
     }
 
     # Perform Housekeeping tasks here
+    Log-Message -Level "Info" -Message "Starting housekeeping tasks..."
+
+    # Implement your housekeeping logic here
+    # Example: Log-Message -Level "Info" -Message "Cleaning up directory X..."
+
+    Log-Message -Level "Info" -Message "Completed housekeeping tasks."
+
+    # Log rotation check
+    if ((Get-Item $LogFilePath).Length -gt ($MaxLogSizeMB * 1MB)) {
+        Rename-Item -Path $LogFilePath -NewName "$LogFilePath.$(Get-Date -Format 'yyyyMMddHHmmss').log"
+        Log-Message -Level "Info" -Message "Log file rotated."
+    }
 
     # Sleep for configured interval
-    $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
     Log-Message -Level "Info" -Message "Sleeping for $cleanupIntervalHours hours."
     Start-Sleep -Seconds ($cleanupIntervalHours * 3600)
 }
