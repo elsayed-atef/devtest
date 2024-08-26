@@ -53,6 +53,7 @@ function Perform-Housekeeping {
             continue
         }
 
+        # Get all files, excluding those matching patterns
         $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File | Where-Object {
             $excludePatterns -notcontains $_.Name
         }
