@@ -117,7 +117,11 @@ while ($true) {
     $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
     $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
+    Log-Message -Level "Info" -Message "Peak hours enabled: $peakHoursEnabled"
+
     if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
+        Log-Message -Level "Info" -Message "Current time is within peak hours."
+
         if ($sleepUntilPeakHoursEnd) {
             # Calculate the remaining sleep time until the end of the peak hours
             $endPeakHours = $timeRanges | Where-Object {
@@ -133,6 +137,8 @@ while ($true) {
                 continue
             }
         }
+    } else {
+        Log-Message -Level "Info" -Message "Current time is outside peak hours or peak hours are disabled."
     }
 
     # Perform Housekeeping
