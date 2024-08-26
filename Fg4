@@ -25,18 +25,20 @@ function Is-In-PeakHours {
         try {
             $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null).TimeOfDay
             $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null).TimeOfDay
-            
+
             Log-Message -Level "Info" -Message "Parsed time range start: $startTime, end: $endTime"
 
             # Check for time range crossing midnight
             if ($endTime -lt $startTime) {
                 # Time range crosses midnight
                 if ($currentTime.TimeOfDay -ge $startTime -or $currentTime.TimeOfDay -lt $endTime) {
+                    Log-Message -Level "Info" -Message "Current time is within peak hours range (crosses midnight)."
                     return $true
                 }
             } else {
                 # Normal time range
                 if ($currentTime.TimeOfDay -ge $startTime -and $currentTime.TimeOfDay -lt $endTime) {
+                    Log-Message -Level "Info" -Message "Current time is within peak hours range."
                     return $true
                 }
             }
@@ -44,6 +46,7 @@ function Is-In-PeakHours {
             Log-Message -Level "Error" -Message "Failed to parse time. Error: $($_.Exception.Message). Start: $($range.Start), End: $($range.End)"
         }
     }
+    Log-Message -Level "Info" -Message "Current time is outside all peak hours ranges."
     return $false
 }
 
@@ -62,7 +65,7 @@ function Perform-Housekeeping {
         $archivePath = $folder.Archive.Path
 
         Log-Message -Level "Info" -Message "Processing folder: $path"
-        
+
         if (-Not (Test-Path -Path $path)) {
             Log-Message -Level "Error" -Message "Path not found: $path"
             continue
@@ -112,7 +115,13 @@ function Perform-Housekeeping {
 # Main Loop
 while ($true) {
     # Load XML Configuration
-    $config = [xml](Get-Content "HousekeepingConfig.xml")
+    try {
+        $config = [xml](Get-Content "HousekeepingConfig.xml")
+        Log-Message -Level "Info" -Message "XML configuration loaded successfully."
+    } catch {
+        Log-Message -Level "Error" -Message "Failed to load XML configuration. Error: $($_.Exception.Message)"
+        exit
+    }
 
     # Extract global settings from XML
     $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
