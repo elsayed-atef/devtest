@@ -76,17 +76,17 @@ function Perform-Housekeeping {
         $path = $folder.location
         $retentionDays = [int]$folder.RetentionDays
         $includeSubfolders = [bool]$folder.IncludeSubfolders
-        $archiveEnabled = [bool]$folder.Archive.Enabled
+        $archiveEnabled = $folder.Archive.Enabled -eq "true"
         $archivePath = $folder.Archive.Path
         $excludePatterns = $folder.ExcludePatterns.Pattern
+
+        Log-Message -Level "Debug" -Message "Processing folder: $path"
+        Log-Message -Level "Debug" -Message "RetentionDays: $retentionDays, IncludeSubfolders: $includeSubfolders, ArchiveEnabled: $archiveEnabled, ArchivePath: $archivePath"
 
         if (Should-ExcludePath -path $path -excludePatterns $excludePatterns) {
             Log-Message -Level "Info" -Message "Skipping folder $path based on exclusion patterns."
             continue
         }
-
-        Log-Message -Level "Debug" -Message "Processing folder: $path"
-        Log-Message -Level "Debug" -Message "RetentionDays: $retentionDays, IncludeSubfolders: $includeSubfolders, ArchiveEnabled: $archiveEnabled, ArchivePath: $archivePath"
 
         if (-Not (Test-Path -Path $path)) {
             Log-Message -Level "Error" -Message "Path not found: $path"
@@ -94,10 +94,6 @@ function Perform-Housekeeping {
         }
 
         $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
-
-        if ($files.Count -eq 0) {
-            Log-Message -Level "Debug" -Message "No files found in $path"
-        }
 
         foreach ($file in $files) {
             $fileAge = (Get-Date) - $file.LastWriteTime
@@ -158,6 +154,7 @@ while ($true) {
     $sleepUntilPeakHoursEnd = $config.housekeepingconfig.Settings.PeakHours.SleepUntilEnd -eq "true"
     $timeRanges = $config.housekeepingconfig.Settings.PeakHours.TimeRange.Range
 
+    Log-Message -Level "Debug" -Message "DryRun: $DryRun"
     Log-Message -Level "Debug" -Message "Peak hours enabled: $peakHoursEnabled"
     Log-Message -Level "Debug" -Message "Sleep until peak hours end: $sleepUntilPeakHoursEnd"
     Log-Message -Level "Debug" -Message "Configured time ranges: $($timeRanges | ForEach-Object { "$($_.Start) to $($_.End)" })"
