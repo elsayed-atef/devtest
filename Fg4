@@ -72,7 +72,8 @@ function Perform-Housekeeping {
         [bool]$includeSubfolders,
         [bool]$archiveBeforeDelete,
         [string]$archivePath,
-        [string[]]$excludePatterns
+        [string[]]$excludePatterns,
+        [bool]$checkEmptyFolder
     )
 
     # Get Current Date for Comparison
@@ -88,36 +89,48 @@ function Perform-Housekeeping {
         }
 
         # Determine the item age in days
-        if ($item.PSIsContainer) {
-            # For folders, use LastAccessTime
-            $itemAgeDays = ($currentDate - $item.LastAccessTime).Days
-        } else {
+        if (-not $item.PSIsContainer) {
             # For files, use LastWriteTime
             $itemAgeDays = ($currentDate - $item.LastWriteTime).Days
-        }
-
-        # Log detailed information for debugging
-        Log-Message -Level "Debug" -Message "Item: $($item.FullName), Age: $itemAgeDays days."
-
-        if ($itemAgeDays -ge $retentionDays) {
-            if ($DryRun) {
-                Log-Message -Level "Debug" -Message "Dry Run: Would delete item $($item.FullName)."
-                if ($archiveBeforeDelete) {
-                    Log-Message -Level "Debug" -Message "Dry Run: Would archive item $($item.FullName) to $archivePath\$($item.Name).zip."
-                }
-            } else {
-                if ($archiveBeforeDelete) {
-                    if (-not (Test-Path $archivePath)) {
-                        New-Item -ItemType Directory -Path $archivePath | Out-Null
+            if ($itemAgeDays -ge $retentionDays) {
+                if ($DryRun) {
+                    Log-Message -Level "Debug" -Message "Dry Run: Would delete file $($item.FullName)."
+                    if ($archiveBeforeDelete) {
+                        Log-Message -Level "Debug" -Message "Dry Run: Would archive file $($item.FullName) to $archivePath\$($item.Name).zip."
                     }
-                    $zipPath = Join-Path -Path $archivePath -ChildPath "$($item.Name).zip"
-                    Compress-Archive -Path $item.FullName -DestinationPath $zipPath
-                    Log-Message -Level "Info" -Message "Archived item $($item.FullName) to $zipPath."
+                } else {
+                    if ($archiveBeforeDelete) {
+                        if (-not (Test-Path $archivePath)) {
+                            New-Item -ItemType Directory -Path $archivePath | Out-Null
+                        }
+                        $zipPath = Join-Path -Path $archivePath -ChildPath "$($item.Name).zip"
+                        Compress-Archive -Path $item.FullName -DestinationPath $zipPath
+                        Log-Message -Level "Info" -Message "Archived file $($item.FullName) to $zipPath."
+                    }
+                    # Delete the file
+                    Remove-Item $item.FullName -Force
+                    Log-Message -Level "Info" -Message "Deleted file $($item.FullName)."
                 }
+            }
+        }
+    }
 
-                # Delete the item
-                Remove-Item $item.FullName -Force
-                Log-Message -Level "Info" -Message "Deleted item $($item.FullName)."
+    # Check if folders are empty and apply retention if enabled
+    if ($checkEmptyFolder) {
+        $folders = Get-ChildItem -Path $path -Directory -Recurse
+        foreach ($folder in $folders) {
+            if (-not (Get-ChildItem -Path $folder.FullName)) {
+                # For empty folders, use LastAccessTime
+                $folderAgeDays = ($currentDate - $folder.LastAccessTime).Days
+                if ($folderAgeDays -ge $retentionDays) {
+                    if ($DryRun) {
+                        Log-Message -Level "Debug" -Message "Dry Run: Would delete empty folder $($folder.FullName)."
+                    } else {
+                        # Delete the empty folder
+                        Remove-Item $folder.FullName -Force
+                        Log-Message -Level "Info" -Message "Deleted empty folder $($folder.FullName)."
+                    }
+                }
             }
         }
     }
@@ -139,6 +152,7 @@ Log-Message -Level "Info" -Message "Housekeeping script started."
 foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
     $includeSubfolders = Convert-XmlBoolean -xmlValue $pathConfig.IncludeSubfolders
     $archiveBeforeDelete = Convert-XmlBoolean -xmlValue $pathConfig.ArchiveBeforeDelete
+    $checkEmptyFolder = Convert-XmlBoolean -xmlValue $pathConfig.CheckEmptyFolder
 
     if ($pathConfig.Enabled -eq "true") {
         Perform-Housekeeping -path $pathConfig.Location `
@@ -146,7 +160,8 @@ foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
                             -includeSubfolders $includeSubfolders `
                             -archiveBeforeDelete $archiveBeforeDelete `
                             -archivePath $pathConfig.ArchivePath `
-                            -excludePatterns $pathConfig.ExcludePatterns.Pattern
+                            -excludePatterns $pathConfig.ExcludePatterns.Pattern `
+                            -checkEmptyFolder $checkEmptyFolder
     } else {
         Log-Message -Level "Info" -Message "Skipping disabled path $($pathConfig.Location)."
     }
