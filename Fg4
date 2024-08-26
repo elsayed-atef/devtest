@@ -104,7 +104,7 @@ function Perform-Housekeeping {
                 }
 
                 if ($DryRun) {
-                    Log-Message -Level "Debug" -Message "Dry Run: Would archive file $($file.FullName)."
+                    Log-Message -Level "Debug" -Message "Dry Run: Would archive file $($file.FullName) to $archivePath\$($file.Name).zip."
                     Log-Message -Level "Debug" -Message "Dry Run: Would delete file $($file.FullName)."
                 } else {
                     if ($archiveBeforeDelete) {
@@ -115,7 +115,7 @@ function Perform-Housekeeping {
                         Compress-Archive -Path $file.FullName -DestinationPath $zipPath
                         Log-Message -Level "Info" -Message "Archived file $($file.FullName) to $zipPath."
                     } else {
-                        Log-Message -Level "Info" -Message "Archiving is disabled, skipping archive step."
+                        Log-Message -Level "Info" -Message "Archiving is disabled for this path, skipping archive step."
                     }
 
                     # Delete the file
