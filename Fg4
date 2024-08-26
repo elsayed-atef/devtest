@@ -1,7 +1,3 @@
-param (
-    [switch]$DryRun = $false
-)
-
 # Function to Log Messages with Timestamp and Log Level
 function Log-Message {
     param (
@@ -41,28 +37,32 @@ function Perform-Housekeeping {
 
     foreach ($folder in $config.housekeepingconfig.paths.path) {
         $path = $folder.location
-        $retentionDays = [int]$folder.RetentionDays
+        $enabled = [bool]$folder.Enabled
         $includeSubfolders = [bool]$folder.IncludeSubfolders
-        $archiveEnabled = $folder.Archive.Enabled -eq "true"
+        $archiveEnabled = [bool]$folder.Archive.Enabled
         $archivePath = $folder.Archive.Path
-        $excludePatterns = $folder.ExcludePattern -split ','
+        $excludePatterns = $folder.ExcludePatterns.Pattern
 
-        Log-Message -Level "Info" -Message "Processing folder: $path (DryRun=$DryRun)"
+        Log-Message -Level "Info" -Message "Processing folder: $path"
+        Log-Message -Level "Info" -Message "Enabled: $enabled, Include Subfolders: $includeSubfolders, Archive Enabled: $archiveEnabled"
+
+        if (-not $enabled) {
+            Log-Message -Level "Info" -Message "Skipping $path because it is disabled."
+            continue
+        }
 
         $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
 
-        foreach ($file in $files) {
-            # Check exclusion patterns
-            foreach ($pattern in $excludePatterns) {
-                if ($file.FullName -like $pattern) {
-                    Log-Message -Level "Info" -Message "Skipping excluded file $file due to pattern $pattern"
-                    continue
-                }
-            }
+        # Exclude folders based on patterns
+        foreach ($pattern in $excludePatterns) {
+            Log-Message -Level "Info" -Message "Excluding files with pattern: $pattern"
+            $files = $files | Where-Object { $_.FullName -notmatch $pattern }
+        }
 
+        foreach ($file in $files) {
             $fileAge = (Get-Date) - $file.LastWriteTime
 
-            if ($fileAge.Days -gt $retentionDays) {
+            if ($fileAge.Days -gt $folder.RetentionDays) {
                 if ($DryRun) {
                     Log-Message -Level "Info" -Message "Dry Run: Would delete $file"
                 } else {
@@ -100,16 +100,16 @@ while ($true) {
     $config = [xml](Get-Content "HousekeepingConfig.xml")
 
     # Extract global settings from XML
-    $LogFilePath = $config.housekeepingconfig.settings.LogFilePath
-    $MaxLogSizeMB = [int]$config.housekeepingconfig.settings.MaxLogSizeMB
-    $cleanupIntervalHours = [int]$config.housekeepingconfig.settings.CleanupIntervalHours
-    $DryRun = $DryRun -or ($config.housekeepingconfig.settings.DryRun -eq "true")
+    $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
+    $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
+    $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
+    $DryRun = [bool]$config.HousekeepingConfig.Settings.DryRun
 
     # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
     $currentTime = Get-Date
-    $peakHoursEnabled = $config.housekeepingconfig.settings.PeakHours.Enabled -eq "true"
-    $sleepUntilPeakHoursEnd = $config.housekeepingconfig.settings.PeakHours.SleepUntilEnd -eq "true"
-    $timeRanges = @($config.housekeepingconfig.settings.PeakHours.TimeRange.Range)
+    $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
+    $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
+    $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
     if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
         if ($sleepUntilPeakHoursEnd) {
