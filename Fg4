@@ -111,14 +111,22 @@ while ($true) {
     $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
     $DryRun = [bool]$config.HousekeepingConfig.Settings.DryRun
 
-    # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
-    $currentTime = Get-Date
+    # Extract Peak Hours settings
     $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
     $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
     $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
     Log-Message -Level "Info" -Message "Peak hours enabled: $peakHoursEnabled"
 
+    # Validate and log the peak hours settings
+    if ($peakHoursEnabled) {
+        Log-Message -Level "Info" -Message "Peak hours are enabled."
+    } else {
+        Log-Message -Level "Info" -Message "Peak hours are not enabled."
+    }
+
+    # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
+    $currentTime = Get-Date
     if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
         Log-Message -Level "Info" -Message "Current time is within peak hours."
 
