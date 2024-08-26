@@ -1,11 +1,13 @@
-# Logging Function
+# Function to Log Messages with Timestamp and Log Level
 function Log-Message {
     param (
         [string]$Level,
         [string]$Message
     )
+
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "$timestamp [$Level] $Message"
+    Write-Output $logEntry
     Add-Content -Path $LogFilePath -Value $logEntry
 }
 
@@ -13,10 +15,10 @@ function Log-Message {
 function Is-In-PeakHours {
     param (
         [datetime]$currentTime,
-        [xml]$timeRanges
+        [array]$timeRanges
     )
 
-    foreach ($range in $timeRanges.Range) {
+    foreach ($range in $timeRanges) {
         $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
         $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
 
@@ -27,60 +29,54 @@ function Is-In-PeakHours {
     return $false
 }
 
-# Function to Perform Housekeeping
+# Function to Perform Housekeeping Tasks
 function Perform-Housekeeping {
     param (
         [xml]$config,
         [bool]$DryRun
     )
 
-    foreach ($pathConfig in $config.HousekeepingConfig.Paths.Path) {
-        $enabled = [bool]$pathConfig.Enabled
-        if (-not $enabled) {
-            Log-Message -Level "Info" -Message "Skipping disabled path: $($pathConfig.Path)"
-            continue
-        }
+    foreach ($folder in $config.HousekeepingConfig.Folders.Folder) {
+        $path = $folder.Path
+        $retentionDays = [int]$folder.RetentionDays
+        $includeSubfolders = [bool]$folder.IncludeSubfolders
+        $archiveEnabled = [bool]$folder.Archive.Enabled
+        $archivePath = $folder.Archive.Path
 
-        $path = $pathConfig.Path
-        $retentionDays = [int]$pathConfig.RetentionDays
-        $includeSubfolders = [bool]$pathConfig.IncludeSubfolders
-        $archiveEnabled = [bool]$pathConfig.Archive.Enabled
-        $archivePath = $pathConfig.Archive.Path
+        Log-Message -Level "Info" -Message "Processing folder: $path"
 
-        Log-Message -Level "Info" -Message "Processing path: $path"
-
-        $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders
+        $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
 
         foreach ($file in $files) {
             $fileAge = (Get-Date) - $file.LastWriteTime
 
-            if ($fileAge.TotalDays -ge $retentionDays) {
+            if ($fileAge.Days -gt $retentionDays) {
                 if ($DryRun) {
-                    Log-Message -Level "Info" -Message "Dry run: Would delete file $($file.FullName)"
+                    Log-Message -Level "Info" -Message "Dry Run: Would delete $file"
                 } else {
-                    if ($archiveEnabled) {
-                        if ($DryRun) {
-                            Log-Message -Level "Info" -Message "Dry run: Would archive file $($file.FullName)"
-                        } else {
-                            $destination = Join-Path -Path $archivePath -ChildPath $file.Name
-                            Move-Item -Path $file.FullName -Destination $destination
-                            Log-Message -Level "Info" -Message "Archived file: $($file.FullName)"
-                        }
-                    }
-
+                    Log-Message -Level "Info" -Message "Deleting $file"
                     Remove-Item -Path $file.FullName -Force
-                    Log-Message -Level "Info" -Message "Deleted file: $($file.FullName)"
+                }
+
+                if ($archiveEnabled) {
+                    if ($DryRun) {
+                        Log-Message -Level "Info" -Message "Dry Run: Would archive $file to $archivePath"
+                    } else {
+                        $archiveFile = Join-Path -Path $archivePath -ChildPath $file.Name
+                        Log-Message -Level "Info" -Message "Archiving $file to $archivePath"
+                        Move-Item -Path $file.FullName -Destination $archiveFile
+                    }
                 }
             }
         }
 
         # Check if the folder is empty and delete if necessary
-        if ($pathConfig.DeleteEmptyFolders -and (-not (Get-ChildItem -Path $path))) {
+        if ($folder.DeleteIfEmpty -and (Get-ChildItem -Path $path).Count -eq 0) {
             if ($DryRun) {
-                Log-Message -Level "Info" -Message "Dry run: Would delete empty folder $path"
+                Log-Message -Level "Info" -Message "Dry Run: Would delete empty folder $path"
             } else {
-                Remove-Item -Path $path -Force
-                Log-Message -Level "Info" -Message "Deleted empty folder: $path"
+                Log-Message -Level "Info" -Message "Deleting empty folder $path"
+                Remove-Item -Path $path -Recurse
             }
         }
     }
@@ -101,12 +97,12 @@ while ($true) {
     $currentTime = Get-Date
     $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
     $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
-    $timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange
+    $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
     if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
         if ($sleepUntilPeakHoursEnd) {
             # Calculate the remaining sleep time until the end of the peak hours
-            $endPeakHours = $timeRanges.Range | Where-Object {
+            $endPeakHours = $timeRanges | Where-Object {
                 $endTime = [datetime]::ParseExact($_.End, "HH:mm", $null)
                 $endTime.TimeOfDay -gt $currentTime.TimeOfDay
             } | Sort-Object Start | Select-Object -First 1
