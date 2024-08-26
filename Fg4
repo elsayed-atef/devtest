@@ -42,8 +42,8 @@ function Perform-Housekeeping {
     foreach ($folder in $config.HousekeepingConfig.Paths.Path) {
         $path = $folder.Location
         $retentionDays = [int]$folder.RetentionDays
-        $includeSubfolders = [bool]$folder.IncludeSubfolders
-        $archiveEnabled = [bool]$folder.Archive.Enabled
+        $includeSubfolders = [bool]($folder.IncludeSubfolders -eq "true")
+        $archiveEnabled = [bool]($folder.Archive.Enabled -eq "true")
         $archivePath = $folder.Archive.Path
 
         # Log folder processing details
