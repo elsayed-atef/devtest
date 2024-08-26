@@ -4,7 +4,6 @@ function Log-Message {
         [string]$Level,
         [string]$Message
     )
-
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "$timestamp [$Level] $Message"
     Add-Content -Path $LogFilePath -Value $logEntry
@@ -16,7 +15,6 @@ function Is-In-PeakHours {
         [datetime]$currentTime,
         [array]$timeRanges
     )
-
     foreach ($range in $timeRanges) {
         $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
         $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
@@ -44,12 +42,12 @@ function Perform-Housekeeping {
         $enabled = [bool]$folder.Enabled
         $excludePatterns = $folder.ExcludePatterns.Pattern
 
-        Log-Message -Level "Info" -Message "Processing folder: $path"
-        Log-Message -Level "Info" -Message "Enabled: $enabled, Retention Days: $retentionDays, Include Subfolders: $includeSubfolders, Archive Enabled: $archiveEnabled, Archive Path: $archivePath"
-        Log-Message -Level "Info" -Message "Exclude Patterns: $($excludePatterns -join ', ')"
+        Log-Message -Level "Debug" -Message "Processing folder: $path"
+        Log-Message -Level "Debug" -Message "Enabled: $enabled, Retention Days: $retentionDays, Include Subfolders: $includeSubfolders, Archive Enabled: $archiveEnabled, Archive Path: $archivePath"
+        Log-Message -Level "Debug" -Message "Exclude Patterns: $($excludePatterns -join ', ')"
 
         if (-not $enabled) {
-            Log-Message -Level "Info" -Message "Skipping folder $path as it is disabled."
+            Log-Message -Level "Debug" -Message "Skipping folder $path as it is disabled."
             continue
         }
 
@@ -104,13 +102,21 @@ while ($true) {
     $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
     $DryRun = [bool]$config.HousekeepingConfig.Settings.DryRun
 
+    # Log parsed configuration
+    Log-Message -Level "Debug" -Message "DryRun: $DryRun"
+    Log-Message -Level "Debug" -Message "MaxLogSizeMB: $MaxLogSizeMB"
+    Log-Message -Level "Debug" -Message "CleanupIntervalHours: $cleanupIntervalHours"
+
     # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
     $currentTime = Get-Date
     $peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
     $sleepUntilPeakHoursEnd = [bool]$config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd
     $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
+    Log-Message -Level "Debug" -Message "PeakHours Enabled: $peakHoursEnabled"
     if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
+        Log-Message -Level "Debug" -Message "Current time is within Peak Hours."
+
         if ($sleepUntilPeakHoursEnd) {
             # Calculate the remaining sleep time until the end of the peak hours
             $endPeakHours = $timeRanges | Where-Object {
