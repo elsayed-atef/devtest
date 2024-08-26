@@ -19,14 +19,18 @@ function Is-In-PeakHours {
     )
 
     foreach ($range in $timeRanges) {
-        $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
-        $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
+        try {
+            $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
+            $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
 
-        # Log parsed time ranges
-        Log-Message -Level "Debug" -Message "Parsed time range: Start $($startTime.ToString("HH:mm:ss")), End $($endTime.ToString("HH:mm:ss"))"
+            # Log parsed time ranges
+            Log-Message -Level "Debug" -Message "Parsed time range: Start $($startTime.ToString("HH:mm:ss")), End $($endTime.ToString("HH:mm:ss"))"
 
-        if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
-            return $true
+            if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -lt $endTime.TimeOfDay) {
+                return $true
+            }
+        } catch {
+            Log-Message -Level "Error" -Message "Failed to parse time range. Start: $($range.Start), End: $($range.End). Error: $_"
         }
     }
     return $false
@@ -48,7 +52,14 @@ function Perform-Housekeeping {
 
         # Log folder processing details
         Log-Message -Level "Info" -Message "Processing folder: $path"
-        Log-Message -Level "Debug" -Message "Retention Days: $retentionDays, Include Subfolders: $includeSubfolders, Archive Enabled: $archiveEnabled, Archive Path: $archivePath"
+        Log-Message -Level "Debug" -Message "Retention Days: $retentionDays"
+        Log-Message -Level "Debug" -Message "Include Subfolders: $includeSubfolders"
+        Log-Message -Level "Debug" -Message "Archive Enabled: $archiveEnabled"
+        Log-Message -Level "Debug" -Message "Archive Path: $archivePath"
+        
+        # Log Exclude Patterns
+        $excludePatterns = $folder.ExcludePatterns.Pattern
+        Log-Message -Level "Debug" -Message "Exclude Patterns: $($excludePatterns -join ', ')"
 
         # Get files and apply retention policy
         $files = Get-ChildItem -Path $path -Recurse:$includeSubfolders -File
@@ -56,7 +67,7 @@ function Perform-Housekeeping {
         foreach ($file in $files) {
             # Check if the file matches the exclude patterns
             $shouldExclude = $false
-            foreach ($pattern in $folder.ExcludePatterns.Pattern) {
+            foreach ($pattern in $excludePatterns) {
                 if ($file.Name -like "*$pattern*") {
                     $shouldExclude = $true
                     Log-Message -Level "Info" -Message "Excluding file: $($file.FullName) based on pattern $pattern"
@@ -114,7 +125,10 @@ while ($true) {
     $DryRun = [bool]($config.HousekeepingConfig.Settings.DryRun -eq "true")
 
     # Log extracted settings
-    Log-Message -Level "Debug" -Message "LogFilePath: $LogFilePath, MaxLogSizeMB: $MaxLogSizeMB, CleanupIntervalHours: $cleanupIntervalHours, DryRun: $DryRun"
+    Log-Message -Level "Debug" -Message "LogFilePath: $LogFilePath"
+    Log-Message -Level "Debug" -Message "MaxLogSizeMB: $MaxLogSizeMB"
+    Log-Message -Level "Debug" -Message "CleanupIntervalHours: $cleanupIntervalHours"
+    Log-Message -Level "Debug" -Message "DryRun: $DryRun"
 
     # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
     $currentTime = Get-Date
@@ -122,7 +136,8 @@ while ($true) {
     $sleepUntilPeakHoursEnd = [bool]($config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd -eq "true")
     $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
 
-    Log-Message -Level "Debug" -Message "Peak Hours Enabled: $peakHoursEnabled, Sleep Until End: $sleepUntilPeakHoursEnd"
+    Log-Message -Level "Debug" -Message "Peak Hours Enabled: $peakHoursEnabled"
+    Log-Message -Level "Debug" -Message "Sleep Until End: $sleepUntilPeakHoursEnd"
 
     if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
         if ($sleepUntilPeakHoursEnd) {
