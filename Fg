@@ -23,7 +23,7 @@ function Log-Message {
 
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "[$timestamp] [$Level] $Message"
-    Add-Content -Path $logFilePath -Value $logEntry
+    Add-Content -Path $LogFilePath -Value $logEntry
 }
 
 function Process-Path {
@@ -42,10 +42,33 @@ function Process-Path {
     Log-Message -Message "Archive Path: $ArchivePath" -Level Debug
     Log-Message -Message "Exclude Patterns: $($ExcludePatterns -join ', ')" -Level Debug
 
-    # Implement the actual housekeeping logic here
-    # This is a placeholder example
     if (Test-Path $PathLocation) {
-        # Implement the logic to handle files and folders, respecting exclude patterns and other parameters
+        $items = Get-ChildItem -Path $PathLocation -Recurse
+        foreach ($item in $items) {
+            $isExcluded = $ExcludePatterns | Where-Object { $item.FullName -like "*$_*" }
+            if ($isExcluded) {
+                Log-Message -Message "Skipping excluded item: $($item.FullName)" -Level Info
+                continue
+            }
+            
+            if ($ArchiveEnabled -and $ArchivePath) {
+                Log-Message -Message "Archiving item: $($item.FullName) to $ArchivePath" -Level Info
+            } elseif (-not $ArchiveEnabled) {
+                Log-Message -Message "Deleting item: $($item.FullName)" -Level Info
+                if ($DryRun) {
+                    Log-Message -Message "Dry run enabled; not actually deleting $($item.FullName)" -Level Info
+                } else {
+                    Remove-Item -Path $item.FullName -Force
+                }
+            }
+        }
+        
+        if ($DeleteIfEmpty -and -not (Get-ChildItem -Path $PathLocation)) {
+            Remove-Item -Path $PathLocation -Force
+            Log-Message -Message "Deleted empty folder: $PathLocation" -Level Info
+        }
+    } else {
+        Log-Message -Message "Path does not exist: $PathLocation" -Level Error
     }
 }
 
@@ -54,15 +77,12 @@ function Run-Housekeeping {
         [string]$ConfigFilePath
     )
 
-    # Load the XML configuration file
     [xml]$config = Get-Content $ConfigFilePath
 
-    # Initialize logging
     $logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
     $maxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
     Initialize-Log -LogFilePath $logFilePath -MaxLogSizeMB $maxLogSizeMB
 
-    # Peak Hours Processing
     $peakHoursEnabled = $config.HousekeepingConfig.Settings.PeakHours.Enabled -eq 'true'
     Log-Message -Message "Peak Hours Enabled: $peakHoursEnabled" -Level Debug
 
@@ -76,7 +96,7 @@ function Run-Housekeeping {
             $end = [datetime]::ParseExact($range.End, 'HH:mm', $null)
 
             if ($end -lt $start) {
-                $end = $end.AddDays(1)  # Adjust end time if it is on the next day
+                $end = $end.AddDays(1)
             }
 
             if ($currentTime.TimeOfDay -ge $start.TimeOfDay -and $currentTime.TimeOfDay -le $end.TimeOfDay) {
@@ -95,7 +115,6 @@ function Run-Housekeeping {
         Log-Message -Message "Peak Hours are not enabled." -Level Info
     }
 
-    # Process paths
     foreach ($path in $config.HousekeepingConfig.Paths.Path) {
         $location = $path.Location
         $enabled = $path.Enabled -eq 'true'
@@ -105,7 +124,6 @@ function Run-Housekeeping {
         $archivePath = $path.Archive.Path
         $excludePatterns = $path.ExcludePatterns.Pattern | ForEach-Object { $_.Trim() }
 
-        # Log path rule details
         Log-Message -Message "Processing path rule:" -Level Info
         Log-Message -Message "Location: $location" -Level Debug
         Log-Message -Message "Enabled: $enabled" -Level Debug
@@ -120,14 +138,10 @@ function Run-Housekeeping {
         }
     }
 
-    # Sleep before the next iteration
     $intervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
     Log-Message -Message "Sleeping for $intervalHours hours." -Level Info
     Start-Sleep -Seconds ($intervalHours * 3600)
 }
 
-# Path to the configuration XML file
 $ConfigFilePath = "C:\path\to\your\config.xml"
-
-# Run the housekeeping process
 Run-Housekeeping -ConfigFilePath $ConfigFilePath
