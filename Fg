@@ -71,7 +71,7 @@ function Invoke-Housekeeping {
     Log-Message -Message "Housekeeping tasks completed." -Level Info
 
     # Sleep for the specified interval if running in a loop
-    $cleanupIntervalHours = $config.HousekeepingConfig.Settings.CleanupIntervalHours
+    $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
     Start-Sleep -Seconds ($cleanupIntervalHours * 3600)
 }
 
@@ -86,7 +86,7 @@ function Initialize-Log {
         $logFileInfo = Get-Item $LogFilePath
         if ($logFileInfo.Length -gt ($MaxLogSizeMB * 1MB)) {
             $timestamp = Get-Date -Format "yyyyMMddHHmmss"
-            $archivedLogFilePath = "$($LogFileInfo.DirectoryName)\$($LogFileInfo.BaseName)_$timestamp$($LogFileInfo.Extension)"
+            $archivedLogFilePath = "$($logFileInfo.DirectoryName)\$($logFileInfo.BaseName)_$timestamp$($logFileInfo.Extension)"
             Move-Item -Path $LogFilePath -Destination $archivedLogFilePath
         }
     }
