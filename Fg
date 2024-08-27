@@ -1,50 +1,51 @@
-# Define a path for the log file
-$LogFilePath = "D:\data\logs\time_parsing_debug.log"
+# Function to convert string to boolean safely
+function ConvertTo-Bool($value) {
+    return [System.Convert]::ToBoolean($value, [System.Globalization.CultureInfo]::InvariantCulture)
+}
 
-# Function to Log Messages with Timestamp and Log Level
-function Log-Message {
+# Enhanced logging function
+function Log {
     param (
-        [string]$Level,
-        [string]$Message
+        [string]$message
     )
-
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp [$Level] $Message"
-    Write-Output $logEntry
-    Add-Content -Path $LogFilePath -Value $logEntry
+    $logEntry = "$timestamp - $message"
+    Add-Content -Path $logFilePath -Value $logEntry
 }
 
-# Function to Test Time Parsing with Error Handling
-function Test-TimeParsing {
-    param (
-        [string]$startTimeStr,
-        [string]$endTimeStr
-    )
+# Read and parse the XML
+$config = [xml](Get-Content "config.xml")
 
-    try {
-        $startTime = [datetime]::ParseExact($startTimeStr, "HH:mm", $null).TimeOfDay
-        Log-Message -Level "Info" -Message "Successfully parsed start time: $startTimeStr as $startTime"
-    } catch {
-        Log-Message -Level "Error" -Message "Failed to parse start time: $($_.Exception.Message). Start: $startTimeStr"
-    }
+# Log raw XML values
+Log "Raw DryRun Value: $($config.HousekeepingConfig.Settings.DryRun)"
+Log "Raw Archive.Enabled Value: $($config.HousekeepingConfig.Paths.Path.Archive.Enabled)"
+Log "Raw PeakHours.Enabled Value: $($config.HousekeepingConfig.Settings.PeakHours.Enabled)"
 
-    try {
-        $endTime = [datetime]::ParseExact($endTimeStr, "HH:mm", $null).TimeOfDay
-        Log-Message -Level "Info" -Message "Successfully parsed end time: $endTimeStr as $endTime"
-    } catch {
-        Log-Message -Level "Error" -Message "Failed to parse end time: $($_.Exception.Message). End: $endTimeStr"
-    }
+# Parse boolean flags
+$dryRun = ConvertTo-Bool $config.HousekeepingConfig.Settings.DryRun
+$archiveEnabled = ConvertTo-Bool $config.HousekeepingConfig.Paths.Path.Archive.Enabled
+$peakHoursEnabled = ConvertTo-Bool $config.HousekeepingConfig.Settings.PeakHours.Enabled
+
+# Log parsed values
+Log "Parsed DryRun Value: $dryRun"
+Log "Parsed Archive.Enabled Value: $archiveEnabled"
+Log "Parsed PeakHours.Enabled Value: $peakHoursEnabled"
+
+# Use the flags in the script
+if ($dryRun) {
+    Log "DryRun is enabled. No changes will be made."
+} else {
+    Log "DryRun is disabled. Changes will be made."
 }
 
-# Main Test Function
-function Main {
-    # Hardcoded time values for testing
-    $testStartTime = "06:00"
-    $testEndTime = "17:00"
-
-    # Test Time Parsing
-    Test-TimeParsing -startTimeStr $testStartTime -endTimeStr $testEndTime
+if ($archiveEnabled) {
+    Log "Archiving is enabled."
+} else {
+    Log "Archiving is disabled."
 }
 
-# Run the main test function
-Main
+if ($peakHoursEnabled) {
+    Log "Peak hours are enabled."
+} else {
+    Log "Peak hours are disabled."
+}
