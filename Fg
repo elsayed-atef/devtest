@@ -60,10 +60,28 @@ function Invoke-Housekeeping {
             # (Add your archiving logic here)
         }
 
-        # (Add your housekeeping logic here, e.g., deleting files, handling retention periods)
+        # Perform housekeeping tasks
+        $files = Get-ChildItem -Path $path -Recurse
+        foreach ($file in $files) {
+            $exclude = $excludePatterns | Where-Object { $file.FullName -like "*$_*" }
+            if ($exclude) {
+                Log-Message -Message "Skipping excluded file: $($file.FullName)" -Level Info
+                continue
+            }
 
-        if ($DryRun) {
-            Log-Message -Message "DryRun is enabled. No actual changes will be made." -Level Info
+            # (Add your file processing logic here)
+            if ($DryRun) {
+                Log-Message -Message "DryRun is enabled. No actual changes will be made." -Level Info
+            } else {
+                # Example: Remove file
+                Remove-Item -Path $file.FullName -Force
+                Log-Message -Message "Deleted file: $($file.FullName)" -Level Info
+            }
+        }
+
+        # Handle subfolders based on IncludeSubfolders flag
+        if ($includeSubfolders) {
+            # (Add logic for handling subfolders if needed)
         }
     }
 
