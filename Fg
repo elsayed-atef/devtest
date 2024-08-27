@@ -1,4 +1,3 @@
-# Define the housekeeping function with enhanced boolean flag handling and logging
 function Invoke-Housekeeping {
     param (
         [string]$ConfigFilePath,
@@ -10,8 +9,8 @@ function Invoke-Housekeeping {
 
     # Initialize logging
     $logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
-    $maxLogSizeMB = $config.HousekeepingConfig.Settings.MaxLogSizeMB
-    Initialize-Log $logFilePath $maxLogSizeMB
+    $maxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
+    Initialize-Log -LogFilePath $logFilePath -MaxLogSizeMB $maxLogSizeMB
 
     # Parse and log the DryRun parameter
     $dryRunFlag = $config.HousekeepingConfig.Settings.DryRun -eq 'true'
@@ -20,6 +19,7 @@ function Invoke-Housekeeping {
     # Parse and log PeakHours settings
     $peakHoursEnabled = $config.HousekeepingConfig.Settings.PeakHours.Enabled -eq 'true'
     Log-Message -Message "PeakHours.Enabled from XML: $peakHoursEnabled" -Level Debug
+
     if ($peakHoursEnabled) {
         $timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range | ForEach-Object {
             [pscustomobject]@{
@@ -32,12 +32,12 @@ function Invoke-Housekeeping {
             ($currentTime -ge $_.Start) -and ($currentTime -le $_.End)
         }
         if ($inPeakHours) {
-            Log-Message -Message "Current time is within peak hours. Housekeeping will not be performed." -Level Info
+            Log-Message -Message "Current time ($currentTime) is within peak hours. Housekeeping will not be performed." -Level Info
             return
         }
     }
 
-    # Loop through each path and process individually
+    # Process each path rule
     foreach ($pathRule in $config.HousekeepingConfig.Paths.Path) {
         $path = $pathRule.Location
         $enabled = $pathRule.Enabled -eq 'true'
@@ -48,7 +48,7 @@ function Invoke-Housekeeping {
 
         Log-Message -Message "Processing path: $path" -Level Info
         Log-Message -Message "Enabled: $enabled, Archive.Enabled: $archiveEnabled, IncludeSubfolders: $includeSubfolders" -Level Debug
-        Log-Message -Message "ExcludePatterns: $excludePatterns" -Level Debug
+        Log-Message -Message "ExcludePatterns: $($excludePatterns -join ', ')" -Level Debug
 
         if (-not $enabled) {
             Log-Message -Message "Skipping path $path as it is not enabled." -Level Info
@@ -56,8 +56,7 @@ function Invoke-Housekeeping {
         }
 
         if ($archiveEnabled) {
-            # Handle archiving logic
-            Log-Message -Message "Archiving enabled for path: $path" -Level Info
+            Log-Message -Message "Archiving enabled for path: $path. Archive Path: $archivePath" -Level Info
             # (Add your archiving logic here)
         }
 
@@ -75,7 +74,6 @@ function Invoke-Housekeeping {
     Start-Sleep -Seconds ($cleanupIntervalHours * 3600)
 }
 
-# Function to initialize logging with log rotation
 function Initialize-Log {
     param (
         [string]$LogFilePath,
@@ -93,7 +91,6 @@ function Initialize-Log {
     New-Item -ItemType File -Path $LogFilePath -Force | Out-Null
 }
 
-# Function to log messages to a file
 function Log-Message {
     param (
         [string]$Message,
