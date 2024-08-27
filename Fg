@@ -1,37 +1,46 @@
-function Test-ExcludePattern {
+function Archive-Files {
     param (
-        [string[]]$Patterns,  # List of patterns to exclude
-        [string]$Path          # Full file path to test
+        [string]$SourcePath,                  # The path to the directory to archive
+        [string]$DestinationPath = "",        # The path to save the archive (optional)
+        [bool]$Compress = $true,              # Whether to compress the files into a ZIP (default is true)
+        [bool]$DeleteOriginal = $false        # Whether to delete original files after archiving (default is false)
     )
 
-    # Check if Patterns is an array and Path is a non-empty string
-    if (-not $Patterns -or -not $Path) {
-        throw "Patterns and Path parameters are required."
+    # Validate the source path
+    if (-not (Test-Path $SourcePath -PathType Container)) {
+        throw "Source path '$SourcePath' does not exist or is not a directory."
     }
 
-    # Ensure patterns are trimmed and cleaned
-    $cleanPatterns = $Patterns | ForEach-Object { $_.Trim() }
-    
-    # Iterate over each pattern and check for a match
-    foreach ($pattern in $cleanPatterns) {
-        if ($Path -like "*$pattern*") {
-            return $true
-        }
+    # Set default destination path if not provided
+    if (-not $DestinationPath) {
+        $DestinationPath = Join-Path (Split-Path $SourcePath -Parent) "$(Split-Path $SourcePath -Leaf)_Archive"
     }
-    
-    return $false
+
+    # If compress is enabled, create a ZIP archive
+    if ($Compress) {
+        $zipFileName = "$DestinationPath.zip"
+        if (Test-Path $zipFileName) {
+            throw "Archive '$zipFileName' already exists. Please specify a different destination or move the existing archive."
+        }
+        # Use Compress-Archive to create the ZIP file
+        Compress-Archive -Path $SourcePath\* -DestinationPath $zipFileName
+        Write-Output "Files from '$SourcePath' have been archived to '$zipFileName'."
+    } else {
+        # If not compressing, simply copy the files to the destination directory
+        if (-not (Test-Path $DestinationPath)) {
+            New-Item -ItemType Directory -Path $DestinationPath | Out-Null
+        }
+        Copy-Item -Path $SourcePath\* -Destination $DestinationPath -Recurse
+        Write-Output "Files from '$SourcePath' have been copied to '$DestinationPath'."
+    }
+
+    # Optionally delete original files
+    if ($DeleteOriginal) {
+        Remove-Item -Path $SourcePath\* -Recurse -Force
+        Write-Output "Original files from '$SourcePath' have been deleted."
+    }
 }
 
 # Example usage:
-$patterns = @("important", "2.00.00")
-$path1 = "C:\temp\logs\important\cas\se.cs"
-$path2 = "C:\temp\logs\1.00.00\kep\kep.kep"
-$path3 = "C:\temp\logs\2.00.00\inner\dwl.del"
-
-$test1 = Test-ExcludePattern -Patterns $patterns -Path $path1
-$test2 = Test-ExcludePattern -Patterns $patterns -Path $path2
-$test3 = Test-ExcludePattern -Patterns $patterns -Path $path3
-
-Write-Output "Test 1: $test1"  # Should output True
-Write-Output "Test 2: $test2"  # Should output False
-Write-Output "Test 3: $test3"  # Should output True
+# Archive files from 'C:\temp\logs' to 'C:\archives\logs.zip' with compression and deletion of original files
+Archive-Files -SourcePath "C:\temp\logs" -DestinationPath "C:\archives\logs.zip" -Compress $true -DeleteOriginal $true
