@@ -1,51 +1,76 @@
-# Function to convert string to boolean safely
-function ConvertTo-Bool($value) {
-    return [System.Convert]::ToBoolean($value, [System.Globalization.CultureInfo]::InvariantCulture)
-}
-
-# Enhanced logging function
-function Log {
+# Function to log messages to the log file
+function Write-Log {
     param (
-        [string]$message
+        [string]$message,
+        [string]$logFilePath = "D:\data\logs\housekeeping.log"
     )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp - $message"
-    Add-Content -Path $logFilePath -Value $logEntry
+    $logMessage = "$timestamp - $message"
+    Add-Content -Path $logFilePath -Value $logMessage
 }
 
-# Read and parse the XML
-$config = [xml](Get-Content "config.xml")
-
-# Log raw XML values
-Log "Raw DryRun Value: $($config.HousekeepingConfig.Settings.DryRun)"
-Log "Raw Archive.Enabled Value: $($config.HousekeepingConfig.Paths.Path.Archive.Enabled)"
-Log "Raw PeakHours.Enabled Value: $($config.HousekeepingConfig.Settings.PeakHours.Enabled)"
-
-# Parse boolean flags
-$dryRun = ConvertTo-Bool $config.HousekeepingConfig.Settings.DryRun
-$archiveEnabled = ConvertTo-Bool $config.HousekeepingConfig.Paths.Path.Archive.Enabled
-$peakHoursEnabled = ConvertTo-Bool $config.HousekeepingConfig.Settings.PeakHours.Enabled
-
-# Log parsed values
-Log "Parsed DryRun Value: $dryRun"
-Log "Parsed Archive.Enabled Value: $archiveEnabled"
-Log "Parsed PeakHours.Enabled Value: $peakHoursEnabled"
-
-# Use the flags in the script
-if ($dryRun) {
-    Log "DryRun is enabled. No changes will be made."
-} else {
-    Log "DryRun is disabled. Changes will be made."
+# Function to read and log boolean values
+function Read-Bool {
+    param (
+        [string]$xmlValue,
+        [string]$flagName,
+        [string]$logFilePath
+    )
+    $value = $false
+    if ([bool]::TryParse($xmlValue, [ref]$value)) {
+        Write-Log "Successfully parsed $flagName as $value (raw value: '$xmlValue')" $logFilePath
+    } else {
+        Write-Log "Failed to parse $flagName; using default value $false (raw value: '$xmlValue')" $logFilePath
+    }
+    return $value
 }
 
-if ($archiveEnabled) {
-    Log "Archiving is enabled."
-} else {
-    Log "Archiving is disabled."
-}
+# Load XML configuration
+$configFilePath = "D:\path\to\your\config.xml"
+[xml]$config = Get-Content $configFilePath
 
+# Log raw XML values for debugging
+$peakHoursEnabledRaw = $config.HousekeepingConfig.Settings.PeakHours.Enabled
+$archiveEnabledRaw = $config.HousekeepingConfig.Paths.Path.Archive.Enabled
+$dryRunRaw = $config.HousekeepingConfig.Settings.DryRun
+
+Write-Log "Raw XML Value - PeakHours.Enabled: $peakHoursEnabledRaw" $config.HousekeepingConfig.Settings.LogFilePath
+Write-Log "Raw XML Value - Archive.Enabled: $archiveEnabledRaw" $config.HousekeepingConfig.Settings.LogFilePath
+Write-Log "Raw XML Value - DryRun: $dryRunRaw" $config.HousekeepingConfig.Settings.LogFilePath
+
+# Parse the boolean values
+$peakHoursEnabled = Read-Bool -xmlValue $peakHoursEnabledRaw -flagName "PeakHours.Enabled" -logFilePath $config.HousekeepingConfig.Settings.LogFilePath
+$archiveEnabled = Read-Bool -xmlValue $archiveEnabledRaw -flagName "Archive.Enabled" -logFilePath $config.HousekeepingConfig.Settings.LogFilePath
+$dryRun = Read-Bool -xmlValue $dryRunRaw -flagName "DryRun" -logFilePath $config.HousekeepingConfig.Settings.LogFilePath
+
+# Handle PeakHours
 if ($peakHoursEnabled) {
-    Log "Peak hours are enabled."
+    Write-Log "Peak hours are enabled. Checking current time..." $config.HousekeepingConfig.Settings.LogFilePath
+    # Add your logic here for handling peak hours
 } else {
-    Log "Peak hours are disabled."
+    Write-Log "Peak hours are disabled. Proceeding with housekeeping tasks..." $config.HousekeepingConfig.Settings.LogFilePath
+    # Your housekeeping logic goes here
 }
+
+# Example of processing a path
+foreach ($path in $config.HousekeepingConfig.Paths.Path) {
+    if ($path.Enabled -eq $true) {
+        Write-Log "Processing path: $($path.Location)" $config.HousekeepingConfig.Settings.LogFilePath
+        if ($dryRun) {
+            Write-Log "Dry run is enabled. No changes will be made." $config.HousekeepingConfig.Settings.LogFilePath
+        } else {
+            Write-Log "Executing housekeeping tasks on path: $($path.Location)" $config.HousekeepingConfig.Settings.LogFilePath
+            # Your file deletion logic goes here
+        }
+        if ($archiveEnabled) {
+            Write-Log "Archiving is enabled for path: $($path.Location)" $config.HousekeepingConfig.Settings.LogFilePath
+            # Your archiving logic goes here
+        } else {
+            Write-Log "Archiving is disabled for path: $($path.Location)" $config.HousekeepingConfig.Settings.LogFilePath
+        }
+    } else {
+        Write-Log "Path rule disabled for: $($path.Location)" $config.HousekeepingConfig.Settings.LogFilePath
+    }
+}
+
+# Implement looping mechanism if needed, as per your original script
