@@ -37,11 +37,16 @@ function Process-Path {
         [string[]]$ExcludePatterns
     )
 
-    # Example: Process each path here
     Log-Message -Message "Processing path: $PathLocation" -Level Info
     Log-Message -Message "Retention Days: $RetentionDays, Include Subfolders: $IncludeSubfolders, Delete If Empty: $DeleteIfEmpty, Archive Enabled: $ArchiveEnabled" -Level Debug
     Log-Message -Message "Archive Path: $ArchivePath" -Level Debug
     Log-Message -Message "Exclude Patterns: $($ExcludePatterns -join ', ')" -Level Debug
+
+    # Implement the actual housekeeping logic here
+    # This is a placeholder example
+    if (Test-Path $PathLocation) {
+        # Implement the logic to handle files and folders, respecting exclude patterns and other parameters
+    }
 }
 
 function Run-Housekeeping {
@@ -64,8 +69,8 @@ function Run-Housekeeping {
     if ($peakHoursEnabled) {
         $currentTime = Get-Date
         $peakHours = $config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range
-        $inPeakHours = $false
 
+        $inPeakHours = $false
         foreach ($range in $peakHours) {
             $start = [datetime]::ParseExact($range.Start, 'HH:mm', $null)
             $end = [datetime]::ParseExact($range.End, 'HH:mm', $null)
