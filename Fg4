@@ -1,179 +1,149 @@
-# Function to Log Messages with Timestamp and Log Level
-function Log-Message {
-    param (
-        [string]$Level,
-        [string]$Message
-    )
+<#
+.SYNOPSIS
+    This PowerShell script performs housekeeping tasks such as deleting old files, archiving files, and logging the operations.
+.DESCRIPTION
+    The script reads configuration settings from an XML file and performs tasks based on the provided parameters.
+    It supports features like DryRun mode, excluding folders based on patterns, archiving, and respecting peak hours.
+    The script logs detailed information about the operations performed and handles errors gracefully.
+.PARAMETER -DryRun
+    If specified, the script will simulate the housekeeping tasks without actually performing any deletions or archiving.
+#>
 
+param(
+    [switch]$DryRun = $false
+)
+
+# Load XML Configuration
+$xmlFilePath = "path\to\your\config.xml"
+[xml]$config = Get-Content $xmlFilePath
+
+# Initialize logging
+$logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
+$maxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
+$logFile = New-Item -ItemType File -Path $logFilePath -Force
+
+function Write-Log {
+    param (
+        [string]$message
+    )
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $logEntry = "$timestamp [$Level] $Message"
-    Write-Output $logEntry
-    Add-Content -Path $LogFilePath -Value $logEntry
+    $logMessage = "$timestamp - $message"
+    Add-Content -Path $logFilePath -Value $logMessage
 }
 
-# Function to Check if Folder Name Matches Exclude Patterns
-function Is-Excluded {
+function Should-ProcessPath {
     param (
-        [string]$folderName,
-        [array]$patterns
+        [string]$path,
+        [xml]$excludePatterns
     )
-
-    foreach ($pattern in $patterns) {
-        if ($folderName -match [regex]::Escape($pattern)) {
-            Log-Message -Level "Debug" -Message "Folder '$folderName' matches exclude pattern '$pattern'."
-            return $true
+    foreach ($pattern in $excludePatterns.Pattern) {
+        if ($path -like "*$pattern*") {
+            Write-Log "Excluded path: $path (matched pattern: $pattern)"
+            return $false
         }
     }
-    return $false
+    return $true
 }
 
-# Function to Check if Current Time is Within Peak Hours
-function Is-In-PeakHours {
+function Process-Folder {
     param (
-        [datetime]$currentTime,
-        [array]$timeRanges
+        [xml]$folderConfig
     )
 
+    $folderPath = $folderConfig.Location
+    $retentionDays = [int]$folderConfig.RetentionDays
+    $includeSubfolders = [bool]$folderConfig.IncludeSubfolders
+    $archiveEnabled = [bool]$folderConfig.Archive.Enabled
+    $archivePath = $folderConfig.Archive.Path
+    $deleteIfEmpty = [bool]$folderConfig.DeleteIfEmpty
+    $excludePatterns = $folderConfig.ExcludePatterns
+
+    Write-Log "Processing folder: $folderPath"
+    Write-Log "Archive Enabled: $archiveEnabled"
+
+    if (!(Should-ProcessPath -path $folderPath -excludePatterns $excludePatterns)) {
+        Write-Log "Skipping folder: $folderPath"
+        return
+    }
+
+    $files = Get-ChildItem -Path $folderPath -Recurse:$includeSubfolders
+    foreach ($file in $files) {
+        $fileFullPath = $file.FullName
+        $fileAgeDays = ((Get-Date) - $file.LastWriteTime).Days
+
+        Write-Log "Checking file: $fileFullPath (Age: $fileAgeDays days)"
+        if ($fileAgeDays -ge $retentionDays) {
+            if ($DryRun) {
+                Write-Log "[DRY RUN] Would delete file: $fileFullPath"
+            } else {
+                Write-Log "Deleting file: $fileFullPath"
+                Remove-Item -Path $fileFullPath -Force
+            }
+        }
+    }
+
+    if ($deleteIfEmpty) {
+        $subfolders = Get-ChildItem -Path $folderPath -Directory
+        foreach ($subfolder in $subfolders) {
+            if ($DryRun) {
+                Write-Log "[DRY RUN] Would check and possibly delete empty folder: $subfolder.FullName"
+            } else {
+                if ((Get-ChildItem -Path $subfolder.FullName).Count -eq 0) {
+                    Write-Log "Deleting empty folder: $subfolder.FullName"
+                    Remove-Item -Path $subfolder.FullName -Force
+                }
+            }
+        }
+    }
+}
+
+# Check Peak Hours
+$peakHoursEnabled = [bool]$config.HousekeepingConfig.Settings.PeakHours.Enabled
+$timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range
+
+$now = Get-Date
+$insidePeakHours = $false
+
+if ($peakHoursEnabled) {
     foreach ($range in $timeRanges) {
         $startTime = [datetime]::ParseExact($range.Start, "HH:mm", $null)
         $endTime = [datetime]::ParseExact($range.End, "HH:mm", $null)
-
-        # Adjust endTime for ranges that cross midnight
-        if ($endTime.TimeOfDay -lt $startTime.TimeOfDay) {
-            $endTime = $endTime.AddDays(1)
-        }
-
-        if ($currentTime.TimeOfDay -ge $startTime.TimeOfDay -and $currentTime.TimeOfDay -le $endTime.TimeOfDay) {
-            Log-Message -Level "Debug" -Message "Current time $($currentTime.ToString('HH:mm')) is within peak hours range: Start $($startTime.ToString('HH:mm')), End $($endTime.ToString('HH:mm'))."
-            return $true
-        }
-    }
-    return $false
-}
-
-# Function to Perform Housekeeping Tasks
-function Perform-Housekeeping {
-    param (
-        [xml]$config,
-        [bool]$DryRun
-    )
-
-    foreach ($folder in $config.HousekeepingConfig.Paths.Path) {
-        $path = $folder.Location
-        $retentionDays = [int]$folder.RetentionDays
-        $includeSubfolders = [bool]$folder.IncludeSubfolders
-        $archiveEnabled = [bool]$folder.Archive.Enabled -eq 'true'
-        $archivePath = $folder.Archive.Path
-        $excludePatterns = $folder.ExcludePatterns.Pattern | ForEach-Object { $_ }
-        $deleteIfEmpty = [bool]$folder.DeleteIfEmpty
-
-        Log-Message -Level "Info" -Message "Processing folder: $path"
-        Log-Message -Level "Debug" -Message "Retention Days: $retentionDays"
-        Log-Message -Level "Debug" -Message "Include Subfolders: $includeSubfolders"
-        Log-Message -Level "Debug" -Message "Archive Enabled: $archiveEnabled"
-        Log-Message -Level "Debug" -Message "Archive Path: $archivePath"
-        Log-Message -Level "Debug" -Message "Exclude Patterns: $($excludePatterns -join ', ')"
-        Log-Message -Level "Debug" -Message "Delete If Empty: $deleteIfEmpty"
-
-        # Retrieve all directories first, and then files if subfolders are included
-        $directories = Get-ChildItem -Path $path -Directory -Recurse:$includeSubfolders
-        $items = $directories | ForEach-Object { Get-ChildItem -Path $_.FullName -File }
-
-        foreach ($item in $items) {
-            # Check if the parent folder of the item should be excluded
-            $parentFolder = Split-Path -Path $item.FullName -Parent
-            $parentFolderName = [System.IO.Path]::GetFileName($parentFolder)
-
-            if (Is-Excluded -folderName $parentFolderName -patterns $excludePatterns) {
-                Log-Message -Level "Info" -Message "Skipping excluded folder: $parentFolder"
-                continue
+        
+        if ($endTime -lt $startTime) {
+            if ($now.TimeOfDay -ge $startTime.TimeOfDay -or $now.TimeOfDay -le $endTime.TimeOfDay) {
+                $insidePeakHours = $true
+                break
             }
-
-            $itemAge = (Get-Date) - $item.LastWriteTime
-            $itemPath = $item.FullName
-
-            if ($itemAge.Days -gt $retentionDays) {
-                if ($DryRun) {
-                    Log-Message -Level "Info" -Message "Dry Run: Would delete $itemPath"
-                } else {
-                    Log-Message -Level "Info" -Message "Deleting $itemPath"
-                    Remove-Item -Path $itemPath -Force
-                }
-
-                if ($archiveEnabled) {
-                    if ($DryRun) {
-                        Log-Message -Level "Info" -Message "Dry Run: Would archive $itemPath to $archivePath"
-                    } else {
-                        $archiveFile = Join-Path -Path $archivePath -ChildPath $item.Name
-                        Log-Message -Level "Info" -Message "Archiving $itemPath to $archiveFile"
-                        Move-Item -Path $itemPath -Destination $archiveFile
-                    }
-                }
-            }
-        }
-
-        # Check if the folder is empty and delete if necessary
-        if ($deleteIfEmpty -and (Get-ChildItem -Path $path).Count -eq 0) {
-            if ($DryRun) {
-                Log-Message -Level "Info" -Message "Dry Run: Would delete empty folder $path"
-            } else {
-                Log-Message -Level "Info" -Message "Deleting empty folder $path"
-                Remove-Item -Path $path -Recurse
+        } else {
+            if ($now.TimeOfDay -ge $startTime.TimeOfDay -and $now.TimeOfDay -le $endTime.TimeOfDay) {
+                $insidePeakHours = $true
+                break
             }
         }
     }
 }
 
-# Main Loop
-while ($true) {
-    # Load XML Configuration
-    $config = [xml](Get-Content "HousekeepingConfig.xml")
-
-    # Extract global settings from XML
-    $LogFilePath = $config.HousekeepingConfig.Settings.LogFilePath
-    $MaxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
-    $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
-    $DryRun = [bool]($config.HousekeepingConfig.Settings.DryRun -eq 'true')
-
-    # Check if Peak Hours are Enabled and If the Script Needs to Sleep Until Peak Hours End
-    $currentTime = Get-Date
-    $peakHoursEnabled = [bool]($config.HousekeepingConfig.Settings.PeakHours.Enabled -eq 'true')
-    $sleepUntilPeakHoursEnd = [bool]($config.HousekeepingConfig.Settings.PeakHours.SleepUntilEnd -eq 'true')
-    $timeRanges = @($config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range)
-
-    Log-Message -Level "Debug" -Message "Peak Hours Enabled: $peakHoursEnabled"
-    Log-Message -Level "Debug" -Message "Sleep Until Peak Hours End: $sleepUntilPeakHoursEnd"
-
-    if ($peakHoursEnabled -and (Is-In-PeakHours -currentTime $currentTime -timeRanges $timeRanges)) {
-        if ($sleepUntilPeakHoursEnd) {
-            # Calculate the remaining sleep time until the end of the peak hours
-            $endPeakHours = $timeRanges | Where-Object {
-                $endTime = [datetime]::ParseExact($_.End, "HH:mm", $null)
-                $endTime.TimeOfDay -gt $currentTime.TimeOfDay
-            } | Sort-Object Start | Select-Object -First 1
-
-            if ($endPeakHours) {
-                $endTimePeak = [datetime]::ParseExact($endPeakHours.End, "HH:mm", $null)
-                $sleepTime = ($endTimePeak.TimeOfDay - $currentTime.TimeOfDay).TotalMinutes
-                Log-Message -Level "Info" -Message "Sleeping until peak hours end. Sleeping for $sleepTime minutes."
-                Start-Sleep -Minutes $sleepTime
-                continue
-            }
-        }
-    }
-
-    # Perform Housekeeping
-    Log-Message -Level "Info" -Message "Starting housekeeping tasks..."
-    Perform-Housekeeping -config $config -DryRun $DryRun
-    Log-Message -Level "Info" -Message "Completed housekeeping tasks."
-
-    # Log rotation check
-    if ((Get-Item $LogFilePath).Length -gt ($MaxLogSizeMB * 1MB)) {
-        Rename-Item -Path $LogFilePath -NewName "$LogFilePath.$(Get-Date -Format 'yyyyMMddHHmmss').log"
-        Log-Message -Level "Info" -Message "Log file rotated."
-    }
-
-    # Sleep for configured interval
-    Log-Message -Level "Info" -Message "Sleeping for $cleanupIntervalHours hours."
-    Start-Sleep -Seconds ($cleanupIntervalHours * 3600)
+if ($peakHoursEnabled -and $insidePeakHours) {
+    Write-Log "Current time is within peak hours. Housekeeping tasks will not be performed."
+    exit
 }
+
+# Log start of housekeeping tasks
+Write-Log "Starting housekeeping tasks"
+
+# Process each folder
+foreach ($folder in $config.HousekeepingConfig.Paths.Path) {
+    if ([bool]$folder.Enabled) {
+        Process-Folder -folderConfig $folder
+    } else {
+        Write-Log "Skipping disabled folder: $folder.Location"
+    }
+}
+
+# Log completion of housekeeping tasks
+Write-Log "Housekeeping tasks completed"
+
+# Sleep for the configured interval
+$intervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
+Write-Log "Sleeping for $intervalHours hours"
+Start-Sleep -Seconds ($intervalHours * 3600)
