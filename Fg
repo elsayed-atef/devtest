@@ -1,97 +1,3 @@
-function Invoke-Housekeeping {
-    param (
-        [string]$ConfigFilePath,
-        [switch]$DryRun = $false
-    )
-
-    # Load the XML configuration file
-    [xml]$config = Get-Content $ConfigFilePath
-
-    # Initialize logging
-    $logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
-    $maxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
-    Initialize-Log -LogFilePath $logFilePath -MaxLogSizeMB $maxLogSizeMB
-
-    # Parse and log the DryRun parameter
-    $dryRunFlag = $config.HousekeepingConfig.Settings.DryRun -eq 'true'
-    Log-Message -Message "DryRun parameter from XML: $dryRunFlag" -Level Debug
-
-    # Parse and log PeakHours settings
-    $peakHoursEnabled = $config.HousekeepingConfig.Settings.PeakHours.Enabled -eq 'true'
-    Log-Message -Message "PeakHours.Enabled from XML: $peakHoursEnabled" -Level Debug
-
-    if ($peakHoursEnabled) {
-        $timeRanges = $config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range | ForEach-Object {
-            [pscustomobject]@{
-                Start = [datetime]::ParseExact($_.Start, "HH:mm", $null)
-                End = [datetime]::ParseExact($_.End, "HH:mm", $null)
-            }
-        }
-        $currentTime = Get-Date
-        $inPeakHours = $timeRanges | Where-Object {
-            ($currentTime -ge $_.Start) -and ($currentTime -le $_.End)
-        }
-        if ($inPeakHours) {
-            Log-Message -Message "Current time ($currentTime) is within peak hours. Housekeeping will not be performed." -Level Info
-            return
-        }
-    }
-
-    # Process each path rule
-    foreach ($pathRule in $config.HousekeepingConfig.Paths.Path) {
-        $path = $pathRule.Location
-        $enabled = $pathRule.Enabled -eq 'true'
-        $archiveEnabled = $pathRule.Archive.Enabled -eq 'true'
-        $archivePath = $pathRule.Archive.Path
-        $includeSubfolders = $pathRule.IncludeSubfolders -eq 'true'
-        $excludePatterns = $pathRule.ExcludePatterns.Pattern
-
-        Log-Message -Message "Processing path: $path" -Level Info
-        Log-Message -Message "Enabled: $enabled, Archive.Enabled: $archiveEnabled, IncludeSubfolders: $includeSubfolders" -Level Debug
-        Log-Message -Message "ExcludePatterns: $($excludePatterns -join ', ')" -Level Debug
-
-        if (-not $enabled) {
-            Log-Message -Message "Skipping path $path as it is not enabled." -Level Info
-            continue
-        }
-
-        if ($archiveEnabled) {
-            Log-Message -Message "Archiving enabled for path: $path. Archive Path: $archivePath" -Level Info
-            # (Add your archiving logic here)
-        }
-
-        # Perform housekeeping tasks
-        $files = Get-ChildItem -Path $path -Recurse
-        foreach ($file in $files) {
-            $exclude = $excludePatterns | Where-Object { $file.FullName -like "*$_*" }
-            if ($exclude) {
-                Log-Message -Message "Skipping excluded file: $($file.FullName)" -Level Info
-                continue
-            }
-
-            # (Add your file processing logic here)
-            if ($DryRun) {
-                Log-Message -Message "DryRun is enabled. No actual changes will be made." -Level Info
-            } else {
-                # Example: Remove file
-                Remove-Item -Path $file.FullName -Force
-                Log-Message -Message "Deleted file: $($file.FullName)" -Level Info
-            }
-        }
-
-        # Handle subfolders based on IncludeSubfolders flag
-        if ($includeSubfolders) {
-            # (Add logic for handling subfolders if needed)
-        }
-    }
-
-    Log-Message -Message "Housekeeping tasks completed." -Level Info
-
-    # Sleep for the specified interval if running in a loop
-    $cleanupIntervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
-    Start-Sleep -Seconds ($cleanupIntervalHours * 3600)
-}
-
 function Initialize-Log {
     param (
         [string]$LogFilePath,
@@ -120,6 +26,103 @@ function Log-Message {
     Add-Content -Path $logFilePath -Value $logEntry
 }
 
-# Execute housekeeping with the provided configuration file
+function Process-Path {
+    param (
+        [string]$PathLocation,
+        [int]$RetentionDays,
+        [bool]$IncludeSubfolders,
+        [bool]$DeleteIfEmpty,
+        [bool]$ArchiveEnabled,
+        [string]$ArchivePath,
+        [string[]]$ExcludePatterns
+    )
+
+    # Example: Process each path here
+    Log-Message -Message "Processing path: $PathLocation" -Level Info
+    Log-Message -Message "Retention Days: $RetentionDays, Include Subfolders: $IncludeSubfolders, Delete If Empty: $DeleteIfEmpty, Archive Enabled: $ArchiveEnabled" -Level Debug
+    Log-Message -Message "Archive Path: $ArchivePath" -Level Debug
+    Log-Message -Message "Exclude Patterns: $($ExcludePatterns -join ', ')" -Level Debug
+}
+
+function Run-Housekeeping {
+    param (
+        [string]$ConfigFilePath
+    )
+
+    # Load the XML configuration file
+    [xml]$config = Get-Content $ConfigFilePath
+
+    # Initialize logging
+    $logFilePath = $config.HousekeepingConfig.Settings.LogFilePath
+    $maxLogSizeMB = [int]$config.HousekeepingConfig.Settings.MaxLogSizeMB
+    Initialize-Log -LogFilePath $logFilePath -MaxLogSizeMB $maxLogSizeMB
+
+    # Peak Hours Processing
+    $peakHoursEnabled = $config.HousekeepingConfig.Settings.PeakHours.Enabled -eq 'true'
+    Log-Message -Message "Peak Hours Enabled: $peakHoursEnabled" -Level Debug
+
+    if ($peakHoursEnabled) {
+        $currentTime = Get-Date
+        $peakHours = $config.HousekeepingConfig.Settings.PeakHours.TimeRange.Range
+        $inPeakHours = $false
+
+        foreach ($range in $peakHours) {
+            $start = [datetime]::ParseExact($range.Start, 'HH:mm', $null)
+            $end = [datetime]::ParseExact($range.End, 'HH:mm', $null)
+
+            if ($end -lt $start) {
+                $end = $end.AddDays(1)  # Adjust end time if it is on the next day
+            }
+
+            if ($currentTime.TimeOfDay -ge $start.TimeOfDay -and $currentTime.TimeOfDay -le $end.TimeOfDay) {
+                $inPeakHours = $true
+                break
+            }
+        }
+
+        if ($inPeakHours) {
+            Log-Message -Message "Current time is within peak hours." -Level Info
+        } else {
+            Log-Message -Message "Current time is outside peak hours or peak hours are not enabled." -Level Info
+            return
+        }
+    } else {
+        Log-Message -Message "Peak Hours are not enabled." -Level Info
+    }
+
+    # Process paths
+    foreach ($path in $config.HousekeepingConfig.Paths.Path) {
+        $location = $path.Location
+        $enabled = $path.Enabled -eq 'true'
+        $includeSubfolders = $path.IncludeSubfolders -eq 'true'
+        $deleteIfEmpty = $path.DeleteIfEmpty -eq 'true'
+        $archiveEnabled = $path.Archive.Enabled -eq 'true'
+        $archivePath = $path.Archive.Path
+        $excludePatterns = $path.ExcludePatterns.Pattern | ForEach-Object { $_.Trim() }
+
+        # Log path rule details
+        Log-Message -Message "Processing path rule:" -Level Info
+        Log-Message -Message "Location: $location" -Level Debug
+        Log-Message -Message "Enabled: $enabled" -Level Debug
+        Log-Message -Message "Include Subfolders: $includeSubfolders" -Level Debug
+        Log-Message -Message "Delete If Empty: $deleteIfEmpty" -Level Debug
+        Log-Message -Message "Archive Enabled: $archiveEnabled" -Level Debug
+        Log-Message -Message "Archive Path: $archivePath" -Level Debug
+        Log-Message -Message "Exclude Patterns: $($excludePatterns -join ', ')" -Level Debug
+
+        if ($enabled) {
+            Process-Path -PathLocation $location -RetentionDays $path.RetentionDays -IncludeSubfolders $includeSubfolders -DeleteIfEmpty $deleteIfEmpty -ArchiveEnabled $archiveEnabled -ArchivePath $archivePath -ExcludePatterns $excludePatterns
+        }
+    }
+
+    # Sleep before the next iteration
+    $intervalHours = [int]$config.HousekeepingConfig.Settings.CleanupIntervalHours
+    Log-Message -Message "Sleeping for $intervalHours hours." -Level Info
+    Start-Sleep -Seconds ($intervalHours * 3600)
+}
+
+# Path to the configuration XML file
 $ConfigFilePath = "C:\path\to\your\config.xml"
-Invoke-Housekeeping -ConfigFilePath $ConfigFilePath -DryRun
+
+# Run the housekeeping process
+Run-Housekeeping -ConfigFilePath $ConfigFilePath
