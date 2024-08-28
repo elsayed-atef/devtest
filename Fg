@@ -1,46 +1,51 @@
 function Archive-Files {
     param (
-        [string]$SourcePath,                  # The path to the directory to archive
-        [string]$DestinationPath = "",        # The path to save the archive (optional)
-        [bool]$Compress = $true,              # Whether to compress the files into a ZIP (default is true)
-        [bool]$DeleteOriginal = $false        # Whether to delete original files after archiving (default is false)
+        [Parameter(Mandatory = $true)]
+        [string]$SourcePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationPath,
+
+        [switch]$Compress = $false
     )
 
-    # Validate the source path
-    if (-not (Test-Path $SourcePath -PathType Container)) {
-        throw "Source path '$SourcePath' does not exist or is not a directory."
+    # Ensure the DestinationPath exists, if not, create it.
+    if (-not (Test-Path $DestinationPath)) {
+        New-Item -Path $DestinationPath -ItemType Directory -Force | Out-Null
     }
 
-    # Set default destination path if not provided
-    if (-not $DestinationPath) {
-        $DestinationPath = Join-Path (Split-Path $SourcePath -Parent) "$(Split-Path $SourcePath -Leaf)_Archive"
-    }
+    # Determine the relative path to maintain folder structure
+    $relativePath = Resolve-Path $SourcePath -Relative
 
-    # If compress is enabled, create a ZIP archive
+    # Create the full destination path based on the relative path
+    $fullDestinationPath = Join-Path -Path $DestinationPath -ChildPath $relativePath
+
     if ($Compress) {
-        $zipFileName = "$DestinationPath.zip"
-        if (Test-Path $zipFileName) {
-            throw "Archive '$zipFileName' already exists. Please specify a different destination or move the existing archive."
+        $archiveFileName = "$($fullDestinationPath).zip"
+        
+        # Create the archive for a file or folder
+        if (Test-Path $SourcePath -PathType Container) {
+            # Compressing a folder
+            Compress-Archive -Path $SourcePath -DestinationPath $archiveFileName -Force
+        } elseif (Test-Path $SourcePath -PathType Leaf) {
+            # Compressing a single file
+            Compress-Archive -Path $SourcePath -DestinationPath $archiveFileName -Force
+        } else {
+            Write-Host "The specified source path does not exist."
         }
-        # Use Compress-Archive to create the ZIP file
-        Compress-Archive -Path $SourcePath\* -DestinationPath $zipFileName
-        Write-Output "Files from '$SourcePath' have been archived to '$zipFileName'."
     } else {
-        # If not compressing, simply copy the files to the destination directory
-        if (-not (Test-Path $DestinationPath)) {
-            New-Item -ItemType Directory -Path $DestinationPath | Out-Null
+        # Handle copying without compression
+        if (Test-Path $SourcePath -PathType Container) {
+            Copy-Item -Path $SourcePath -Destination $fullDestinationPath -Recurse -Force
+        } elseif (Test-Path $SourcePath -PathType Leaf) {
+            Copy-Item -Path $SourcePath -Destination $fullDestinationPath -Force
+        } else {
+            Write-Host "The specified source path does not exist."
         }
-        Copy-Item -Path $SourcePath\* -Destination $DestinationPath -Recurse
-        Write-Output "Files from '$SourcePath' have been copied to '$DestinationPath'."
     }
-
-    # Optionally delete original files
-    if ($DeleteOriginal) {
-        Remove-Item -Path $SourcePath\* -Recurse -Force
-        Write-Output "Original files from '$SourcePath' have been deleted."
-    }
+    
+    Write-Host "Archiving completed. The files have been saved to: $fullDestinationPath"
 }
 
-# Example usage:
-# Archive files from 'C:\temp\logs' to 'C:\archives\logs.zip' with compression and deletion of original files
-Archive-Files -SourcePath "C:\temp\logs" -DestinationPath "C:\archives\logs.zip" -Compress $true -DeleteOriginal $true
+# Example usage
+Archive-Files -SourcePath "D:\data\fb\inst\twt\ins\file.csv" -DestinationPath "C:\temp\archive" -Compress $true
