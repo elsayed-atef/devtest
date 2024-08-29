@@ -1,51 +1,18 @@
-function Archive-Files {
+# Function to Perform Log Rotation
+function Rotate-Log {
     param (
-        [Parameter(Mandatory = $true)]
-        [string]$SourcePath,
-
-        [Parameter(Mandatory = $true)]
-        [string]$DestinationPath,
-
-        [switch]$Compress = $false
+        [string]$logFilePath,
+        [int]$maxLogSizeMB
     )
 
-    # Ensure the DestinationPath exists, if not, create it.
-    if (-not (Test-Path $DestinationPath)) {
-        New-Item -Path $DestinationPath -ItemType Directory -Force | Out-Null
-    }
-
-    # Determine the relative path to maintain folder structure
-    $relativePath = Resolve-Path $SourcePath -Relative
-
-    # Create the full destination path based on the relative path
-    $fullDestinationPath = Join-Path -Path $DestinationPath -ChildPath $relativePath
-
-    if ($Compress) {
-        $archiveFileName = "$($fullDestinationPath).zip"
-        
-        # Create the archive for a file or folder
-        if (Test-Path $SourcePath -PathType Container) {
-            # Compressing a folder
-            Compress-Archive -Path $SourcePath -DestinationPath $archiveFileName -Force
-        } elseif (Test-Path $SourcePath -PathType Leaf) {
-            # Compressing a single file
-            Compress-Archive -Path $SourcePath -DestinationPath $archiveFileName -Force
-        } else {
-            Write-Host "The specified source path does not exist."
-        }
-    } else {
-        # Handle copying without compression
-        if (Test-Path $SourcePath -PathType Container) {
-            Copy-Item -Path $SourcePath -Destination $fullDestinationPath -Recurse -Force
-        } elseif (Test-Path $SourcePath -PathType Leaf) {
-            Copy-Item -Path $SourcePath -Destination $fullDestinationPath -Force
-        } else {
-            Write-Host "The specified source path does not exist."
+    if (Test-Path $logFilePath) {
+        $logFileSizeMB = (Get-Item $logFilePath).Length / 1MB
+        if ($logFileSizeMB -ge $maxLogSizeMB) {
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $archiveFilePath = Join-Path -Path (Split-Path $logFilePath) -ChildPath "housekeeping_$timestamp.log"
+            Rename-Item $logFilePath $archiveFilePath
+            Compress-Archive -Path $archiveFilePath -DestinationPath "$archiveFilePath.zip"
+            Remove-Item $archiveFilePath
         }
     }
-    
-    Write-Host "Archiving completed. The files have been saved to: $fullDestinationPath"
 }
-
-# Example usage
-Archive-Files -SourcePath "D:\data\fb\inst\twt\ins\file.csv" -DestinationPath "C:\temp\archive" -Compress $true
