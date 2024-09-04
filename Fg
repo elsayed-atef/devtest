@@ -11,12 +11,19 @@ function Expand-WildcardPath {
     $pathParts = $wildcardPath -split '\\'
     $expandedPaths = @()
 
+    # Debug: Show the path parts we're working with
+    Write-Host "Debug: Path parts:" $pathParts
+
     # Recursive function to handle wildcards in any part of the path
     function Expand-PathPart {
         param (
             [string]$currentPath,
             [array]$remainingParts
         )
+
+        # Debug: Show current path and remaining parts
+        Write-Host "Debug: Current Path:" $currentPath
+        Write-Host "Debug: Remaining Parts:" $remainingParts
 
         if ($remainingParts.Count -eq 0) {
             # If no more parts, return the fully expanded path
@@ -32,6 +39,9 @@ function Expand-WildcardPath {
                 $_.FullName
             }
 
+            # Debug: Show the directories found
+            Write-Host "Debug: Directories found:" $directories
+
             $expanded = @()
             foreach ($dir in $directories) {
                 $expanded += Expand-PathPart -currentPath $dir -remainingParts $restParts
@@ -40,6 +50,10 @@ function Expand-WildcardPath {
         } else {
             # If the next part is not a wildcard, just append it to the current path
             $newPath = Join-Path -Path $currentPath -ChildPath $nextPart
+
+            # Debug: Show the new path
+            Write-Host "Debug: New Path:" $newPath
+
             return Expand-PathPart -currentPath $newPath -remainingParts $restParts
         }
     }
@@ -47,6 +61,10 @@ function Expand-WildcardPath {
     # Start expanding from the root (which is the first part of the path)
     $rootPath = $pathParts[0]
     $restParts = $pathParts[1..($pathParts.Count - 1)]
+
+    # Debug: Show the root path and rest of the parts
+    Write-Host "Debug: Root Path:" $rootPath
+    Write-Host "Debug: Rest Parts:" $restParts
 
     return Expand-PathPart -currentPath $rootPath -remainingParts $restParts
 }
@@ -57,3 +75,6 @@ $expandedPaths = Expand-WildcardPath -wildcardPath $WildcardPath
 foreach ($path in $expandedPaths) {
     Write-Output $path
 }
+
+# Debug: Show final expanded paths
+Write-Host "Debug: Final Expanded Paths:" $expandedPaths
