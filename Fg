@@ -48,7 +48,14 @@ function Expand-WildcardPath {
             # Append the current part to the path
             $newPath = Join-Path -Path $currentPath -ChildPath $nextPart
             Write-Host "DEBUG: Level $level - Moving to next part '$nextPart', new path: $newPath"
-            return Expand-PathPart -currentPath $newPath -remainingParts $restParts -level ($level + 1)
+
+            # Only recurse if the directory actually exists to prevent infinite loops
+            if (Test-Path $newPath) {
+                return Expand-PathPart -currentPath $newPath -remainingParts $restParts -level ($level + 1)
+            } else {
+                Write-Host "DEBUG: Path '$newPath' does not exist, skipping further expansion."
+                return @($newPath)
+            }
         }
     }
 
