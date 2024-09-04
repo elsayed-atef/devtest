@@ -1,18 +1,59 @@
-# Function to Perform Log Rotation
-function Rotate-Log {
+param (
+    [string]$WildcardPath = "C:\temp\logs\*\*\xyz\vb"
+)
+
+function Expand-WildcardPath {
     param (
-        [string]$logFilePath,
-        [int]$maxLogSizeMB
+        [string]$wildcardPath
     )
 
-    if (Test-Path $logFilePath) {
-        $logFileSizeMB = (Get-Item $logFilePath).Length / 1MB
-        if ($logFileSizeMB -ge $maxLogSizeMB) {
-            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-            $archiveFilePath = Join-Path -Path (Split-Path $logFilePath) -ChildPath "housekeeping_$timestamp.log"
-            Rename-Item $logFilePath $archiveFilePath
-            Compress-Archive -Path $archiveFilePath -DestinationPath "$archiveFilePath.zip"
-            Remove-Item $archiveFilePath
+    # Split the path into parts by the backslash
+    $pathParts = $wildcardPath -split '\\'
+    $expandedPaths = @()
+
+    # Recursive function to handle wildcards in any part of the path
+    function Expand-PathPart {
+        param (
+            [string]$currentPath,
+            [array]$remainingParts
+        )
+
+        if ($remainingParts.Count -eq 0) {
+            # If no more parts, return the fully expanded path
+            return @($currentPath)
+        }
+
+        $nextPart = $remainingParts[0]
+        $restParts = $remainingParts[1..($remainingParts.Count - 1)]
+
+        if ($nextPart -eq '*') {
+            # If the next part is a wildcard, list all directories
+            $directories = Get-ChildItem -Path $currentPath -Directory | ForEach-Object {
+                $_.FullName
+            }
+
+            $expanded = @()
+            foreach ($dir in $directories) {
+                $expanded += Expand-PathPart -currentPath $dir -remainingParts $restParts
+            }
+            return $expanded
+        } else {
+            # If the next part is not a wildcard, just append it to the current path
+            $newPath = Join-Path -Path $currentPath -ChildPath $nextPart
+            return Expand-PathPart -currentPath $newPath -remainingParts $restParts
         }
     }
+
+    # Start expanding from the root (which is the first part of the path)
+    $rootPath = $pathParts[0]
+    $restParts = $pathParts[1..($pathParts.Count - 1)]
+
+    return Expand-PathPart -currentPath $rootPath -remainingParts $restParts
+}
+
+# Expand the wildcard path and output the results
+$expandedPaths = Expand-WildcardPath -wildcardPath $WildcardPath
+
+foreach ($path in $expandedPaths) {
+    Write-Output $path
 }
