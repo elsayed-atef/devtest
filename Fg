@@ -1,82 +1,47 @@
 param (
-    [string]$WildcardPath = "C:\temp\logs\*\*\xyz\vb"
+    [string]$WildcardPath = "C:\temp\logs\*\fgh"
 )
 
 function Expand-WildcardPath {
     param (
-        [string]$wildcardPath
+        [string]$WildcardPath
     )
 
-    # Split the path into parts by the backslash
-    $pathParts = $wildcardPath -split '\\'
-    $expandedPaths = @()
+    $WildcardPathParts = $WildcardPath -split '\\'
+    $ExpandedPaths = @('')
 
-    # Recursive function to handle wildcards in any part of the path
-    function Expand-PathPart {
-        param (
-            [string]$currentPath,
-            [array]$remainingParts,
-            [int]$level
-        )
-
-        # Debugging: Print current path and remaining parts
-        Write-Host "DEBUG: Level $level - Expanding '$currentPath' with remaining parts '$($remainingParts -join '\')'"
-
-        # If no more parts, return the fully expanded path
-        if ($remainingParts.Count -eq 0) {
-            Write-Host "DEBUG: Fully expanded path: $currentPath"
-            return @($currentPath)
-        }
-
-        $nextPart = $remainingParts[0]
-        $restParts = $remainingParts[1..($remainingParts.Count - 1)]
-
-        # Handle wildcard expansion
-        if ($nextPart -eq '*') {
-            Write-Host "DEBUG: Found wildcard '*' in path. Expanding directories at '$currentPath'"
-            $directories = Get-ChildItem -Path $currentPath -Directory -Depth 0 | ForEach-Object {
-                $_.FullName
+    foreach ($part in $WildcardPathParts) {
+        if ($part -eq '*') {
+            $NewPaths = @()
+            foreach ($basePath in $ExpandedPaths) {
+                $dirs = Get-ChildItem -Path $basePath -Directory | ForEach-Object { $_.FullName }
+                $NewPaths += $dirs
             }
-
-            $expanded = @()
-            foreach ($dir in $directories) {
-                $expanded += Expand-PathPart -currentPath $dir -remainingParts $restParts -level ($level + 1)
-            }
-
-            return $expanded
+            $ExpandedPaths = $NewPaths
         } else {
-            # Append the current part to the path
-            $newPath = Join-Path -Path $currentPath -ChildPath $nextPart
-            Write-Host "DEBUG: Level $level - Moving to next part '$nextPart', new path: $newPath"
-
-            # Prevent appending the static part again if it's already included
-            if ($restParts.Count -eq 0 -or (Test-Path $newPath)) {
-                return Expand-PathPart -currentPath $newPath -remainingParts $restParts -level ($level + 1)
-            } else {
-                Write-Host "DEBUG: Path '$newPath' does not exist, stopping expansion."
-                return @($newPath)
+            $ExpandedPaths = $ExpandedPaths | ForEach-Object {
+                Join-Path -Path $_ -ChildPath $part
             }
         }
+
+        # Debugging: Display the current expanded paths after each step
+        Write-Host "DEBUG: Expanded paths so far: $ExpandedPaths"
     }
 
-    # Start expanding from the root (which is the first part of the path)
-    $rootPath = $pathParts[0]
-    $restParts = $pathParts[1..($pathParts.Count - 1)]
-
-    return Expand-PathPart -currentPath $rootPath -remainingParts $restParts -level 1
+    return $ExpandedPaths | Where-Object { Test-Path $_ }
 }
 
 # Expand the wildcard path and output the results
-$expandedPaths = Expand-WildcardPath -wildcardPath $WildcardPath
+$ExpandedPaths = Expand-WildcardPath -WildcardPath $WildcardPath
 
 # Debugging: Output expanded paths
-if ($expandedPaths.Count -eq 0) {
+if ($ExpandedPaths.Count -eq 0) {
     Write-Host "DEBUG: No paths were expanded."
 } else {
-    foreach ($path in $expandedPaths) {
+    foreach ($path in $ExpandedPaths) {
         Write-Host "DEBUG: Expanded path: $path"
     }
 }
 
 # Output expanded paths
-$expandedPaths
+$ExpandedPaths
