@@ -3,25 +3,26 @@ function Get-Level1Paths {
         [string]$WildcardPath
     )
     
-    # Resolve the wildcard path to get all matching directories
-    $allPaths = Get-ChildItem -Path $WildcardPath -Directory -Recurse
+    # Get the parent directory from the wildcard path
+    $parentPath = Split-Path -Path $WildcardPath -Parent
     
-    # Create a hashset to store level 1 paths
-    $level1Paths = @{}
+    # Resolve the wildcard path to get all matching directories
+    $allPaths = Get-ChildItem -Path $parentPath -Directory | Where-Object { $_.FullName -like $WildcardPath }
+
+    # Create a list to store level 1 paths
+    $level1Paths = @()
 
     foreach ($path in $allPaths) {
-        # Split the full path and get the parts
-        $parts = $path.FullName -split '\\'
+        # Get the immediate subdirectories of the matched path
+        $subDirs = Get-ChildItem -Path $path.FullName -Directory
         
-        # Reconstruct the level 1 path
-        if ($parts.Count -ge 2) {
-            $level1Path = "$($parts[0])\$($parts[1])"
-            $level1Paths[$level1Path] = $true
+        foreach ($subDir in $subDirs) {
+            $level1Paths += $subDir.FullName
         }
     }
 
     # Output the unique level 1 paths
-    $level1Paths.Keys
+    $level1Paths | Sort-Object -Unique
 }
 
 # Example usage
