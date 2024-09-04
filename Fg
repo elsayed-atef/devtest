@@ -1,47 +1,28 @@
-param (
-    [string]$WildcardPath = "C:\temp\logs\*\fgh"
-)
-
-function Expand-WildcardPath {
+function Get-Level1Paths {
     param (
         [string]$WildcardPath
     )
+    
+    # Resolve the wildcard path to get all matching directories
+    $allPaths = Get-ChildItem -Path $WildcardPath -Directory -Recurse
+    
+    # Create a hashset to store level 1 paths
+    $level1Paths = @{}
 
-    $WildcardPathParts = $WildcardPath -split '\\'
-    $ExpandedPaths = @('')
-
-    foreach ($part in $WildcardPathParts) {
-        if ($part -eq '*') {
-            $NewPaths = @()
-            foreach ($basePath in $ExpandedPaths) {
-                $dirs = Get-ChildItem -Path $basePath -Directory | ForEach-Object { $_.FullName }
-                $NewPaths += $dirs
-            }
-            $ExpandedPaths = $NewPaths
-        } else {
-            $ExpandedPaths = $ExpandedPaths | ForEach-Object {
-                Join-Path -Path $_ -ChildPath $part
-            }
+    foreach ($path in $allPaths) {
+        # Split the full path and get the parts
+        $parts = $path.FullName -split '\\'
+        
+        # Reconstruct the level 1 path
+        if ($parts.Count -ge 2) {
+            $level1Path = "$($parts[0])\$($parts[1])"
+            $level1Paths[$level1Path] = $true
         }
-
-        # Debugging: Display the current expanded paths after each step
-        Write-Host "DEBUG: Expanded paths so far: $ExpandedPaths"
     }
 
-    return $ExpandedPaths | Where-Object { Test-Path $_ }
+    # Output the unique level 1 paths
+    $level1Paths.Keys
 }
 
-# Expand the wildcard path and output the results
-$ExpandedPaths = Expand-WildcardPath -WildcardPath $WildcardPath
-
-# Debugging: Output expanded paths
-if ($ExpandedPaths.Count -eq 0) {
-    Write-Host "DEBUG: No paths were expanded."
-} else {
-    foreach ($path in $ExpandedPaths) {
-        Write-Host "DEBUG: Expanded path: $path"
-    }
-}
-
-# Output expanded paths
-$ExpandedPaths
+# Example usage
+Get-Level1Paths "C:\temp\logs\*\*"
