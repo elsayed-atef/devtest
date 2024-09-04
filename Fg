@@ -2,22 +2,26 @@ function Get-Level1Paths {
     param (
         [string]$WildcardPath
     )
-    
-    # Get the parent directory from the wildcard path
-    $parentPath = Split-Path -Path $WildcardPath -Parent
-    
-    # Resolve the wildcard path to get all matching directories
-    $allPaths = Get-ChildItem -Path $parentPath -Directory | Where-Object { $_.FullName -like $WildcardPath }
 
-    # Create a list to store level 1 paths
+    # Get the base directory from the wildcard path
+    $basePath = Split-Path -Path $WildcardPath -Parent
+    
+    # Use Get-ChildItem to get all directories matching the base path
+    $baseDirs = Get-ChildItem -Path $basePath -Directory
+
+    # Store level 1 directories
     $level1Paths = @()
 
-    foreach ($path in $allPaths) {
-        # Get the immediate subdirectories of the matched path
-        $subDirs = Get-ChildItem -Path $path.FullName -Directory
-        
-        foreach ($subDir in $subDirs) {
-            $level1Paths += $subDir.FullName
+    foreach ($dir in $baseDirs) {
+        # Check if the directory matches the wildcard pattern
+        if ($dir.FullName -like $WildcardPath) {
+            # Get all immediate subdirectories of the current directory
+            $subDirs = Get-ChildItem -Path $dir.FullName -Directory
+            
+            foreach ($subDir in $subDirs) {
+                # Add the full path of each subdirectory to the list
+                $level1Paths += $subDir.FullName
+            }
         }
     }
 
