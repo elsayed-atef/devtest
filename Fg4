@@ -127,3 +127,47 @@ foreach ($server in $servers) {
 
 Write-Log "Checks completed. Log file is located at $logFile"
 Write-Host "Checks completed. Check the log at $logFile"
+
+
+
+
+
+# Get MQ channel process (amqrmppa is the main one)
+$mqProcs = Get-Process | Where-Object { $_.ProcessName -match "amqrmppa|runmqchl" }
+
+foreach ($proc in $mqProcs) {
+    Write-Host "Inspecting process: $($proc.ProcessName) PID=$($proc.Id)"
+
+    # Get all TCP connections owned by this process
+    $conns = Get-NetTCPConnection -OwningProcess $proc.Id -State Established
+    foreach ($c in $conns) {
+        try {
+            # Build endpoint string
+            $remote = "$($c.RemoteAddress):$($c.RemotePort)"
+            $local  = "$($c.LocalAddress):$($c.LocalPort)"
+            Write-Host "  Connection: $local -> $remote"
+
+            # Create a .NET socket bound to this connection
+            $socket = New-Object System.Net.Sockets.Socket (
+                [System.Net.IPAddress]::Parse($c.LocalAddress).AddressFamily,
+                [System.Net.Sockets.SocketType]::Stream,
+                [System.Net.Sockets.ProtocolType]::Tcp
+            )
+
+            # Try attaching to existing connection (not always possible without admin)
+            $socket.Connect($c.RemoteAddress, $c.RemotePort)
+
+            # Check KeepAlive option
+            $ka = $socket.GetSocketOption([System.Net.Sockets.SocketOptionLevel]::Socket,
+                                          [System.Net.Sockets.SocketOptionName]::KeepAlive)
+            Write-Host "    -> KeepAlive enabled? $ka"
+            $socket.Dispose()
+        }
+        catch {
+            Write-Warning "    Could not inspect $remote (need admin or connection busy)."
+        }
+    }
+}
+
+
+
